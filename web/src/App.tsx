@@ -52,6 +52,7 @@ import { Card, CardContent, CardHeader } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { ProjectGraphFlow } from "./components/ProjectGraphFlow";
+import { I18nProvider, useI18n, useLanguageController, type LanguagePreference, type SupportedLanguage } from "./i18n";
 
 type WorkspaceView = "chat" | "documents" | "graph" | "mcp" | "settings";
 type ResultView = "overview" | "chunks" | "events" | "entities" | "search";
@@ -92,8 +93,20 @@ const MODEL_LOGS_STORAGE_KEY = "sag:model-call-logs:v1";
 const MODEL_LOG_CURSOR_STORAGE_KEY = "sag:model-call-log-cursor:v1";
 const MAX_BROWSER_MODEL_LOGS = 200;
 const DOCUMENT_RESULT_PAGE_SIZE = 10;
+const DEFAULT_SEARCH_QUERY_ZH = "基于当前项目资料检索";
+const DEFAULT_SEARCH_QUERY_EN = "Search current project documents";
 
 export default function App() {
+  const i18n = useLanguageController();
+  return (
+    <I18nProvider value={i18n}>
+      <AppShell />
+    </I18nProvider>
+  );
+}
+
+function AppShell() {
+  const { language, preference: languagePreference, setPreference: setLanguagePreference, t } = useI18n();
   const [projects, setProjects] = useState<SourceRecord[]>([]);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [projectStats, setProjectStats] = useState<ProjectStatsRecord | null>(null);
@@ -116,12 +129,12 @@ export default function App() {
   const [showArchivedProjects, setShowArchivedProjects] = useState(false);
   const [showArchivedDocuments, setShowArchivedDocuments] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [status, setStatus] = useState("正在加载 SAG...");
+  const [status, setStatus] = useState(() => t("正在加载 SAG...", "Loading SAG..."));
   const [error, setError] = useState("");
   const [uploadJobs, setUploadJobs] = useState<UploadJobRecord[]>([]);
   const [isUploadQueueExpanded, setIsUploadQueueExpanded] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("基于当前项目资料检索");
+  const [searchQuery, setSearchQuery] = useState(() => t(DEFAULT_SEARCH_QUERY_ZH, DEFAULT_SEARCH_QUERY_EN));
   const [searchMode, setSearchMode] = useState<SearchMode>("fast");
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [processSteps, setProcessSteps] = useState<ProcessStep[]>([]);
@@ -168,6 +181,15 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    setSearchQuery((current) => {
+      if (current === DEFAULT_SEARCH_QUERY_ZH || current === DEFAULT_SEARCH_QUERY_EN) {
+        return t(DEFAULT_SEARCH_QUERY_ZH, DEFAULT_SEARCH_QUERY_EN);
+      }
+      return current;
+    });
+  }, [language, t]);
 
   useEffect(() => {
     if (aiSettings?.defaultSearchMode) {
@@ -259,12 +281,12 @@ export default function App() {
       if (firstActiveProject) {
         setSelectedProjectId(firstActiveProject.id);
       } else {
-        setStatus("请先创建项目");
+        setStatus(t("请先创建项目", "Create a project first"));
       }
       await syncModelLogs();
     } catch (err) {
       setError(getErrorMessage(err));
-      setStatus("加载失败");
+      setStatus(t("加载失败", "Failed to load"));
     }
   }
 
@@ -313,7 +335,7 @@ export default function App() {
       } else {
         setMcpDetail(null);
       }
-      setStatus("就绪");
+      setStatus(t("就绪", "Ready"));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -388,7 +410,7 @@ export default function App() {
         setModelLogCursor(response.latestSequence);
       }
     } catch (err) {
-      console.warn("同步模型日志失败", err);
+      console.warn("Failed to sync model logs", err);
     }
   }
 
@@ -430,12 +452,12 @@ export default function App() {
         setModelLogCursor(response.latestSequence);
       }
     } catch (err) {
-      console.warn("清空前同步模型日志序号失败", err);
+      console.warn("Failed to sync model log cursor before clearing", err);
     }
     setModelLogs([]);
     window.localStorage.removeItem(MODEL_LOGS_STORAGE_KEY);
     window.localStorage.setItem(MODEL_LOG_CURSOR_STORAGE_KEY, String(modelLogCursorRef.current));
-    setStatus("已清空浏览器缓存中的原始日志");
+    setStatus(t("已清空浏览器缓存中的原始日志", "Raw logs in browser cache have been cleared"));
   }
 
   async function createProject() {
@@ -456,7 +478,7 @@ export default function App() {
   }
 
   async function renameProject(project: SourceRecord) {
-    const name = window.prompt("请输入新的项目名称", project.name)?.trim();
+    const name = window.prompt(t("请输入新的项目名称", "Enter a new project name"), project.name)?.trim();
     if (!name || name === project.name) return;
     try {
       await api.updateProject(project.id, { name });
@@ -467,8 +489,10 @@ export default function App() {
   }
 
   async function archiveOrRestoreProject(project: SourceRecord) {
-    const action = project.archivedAt ? "恢复" : "归档";
-    if (!window.confirm(`${action}项目「${project.name}」？`)) return;
+    const confirmText = project.archivedAt
+      ? t(`恢复项目「${project.name}」？`, `Restore project "${project.name}"?`)
+      : t(`归档项目「${project.name}」？`, `Archive project "${project.name}"?`);
+    if (!window.confirm(confirmText)) return;
     try {
       if (project.archivedAt) {
         await api.restoreProject(project.id);
@@ -485,10 +509,13 @@ export default function App() {
   }
 
   async function permanentlyDeleteProject(project: SourceRecord) {
-    const confirmed = window.confirm(`永久删除项目「${project.name}」？\n\n这会级联删除该项目下的文档、切片、事件、实体和相关关系，且不可恢复。`);
+    const confirmed = window.confirm(t(
+      `永久删除项目「${project.name}」？\n\n这会级联删除该项目下的文档、切片、事件、实体和相关关系，且不可恢复。`,
+      `Permanently delete project "${project.name}"?\n\nThis will cascade delete documents, chunks, events, entities, and relations under this project. This action cannot be undone.`
+    ));
     if (!confirmed) {
       setError("");
-      setStatus("已取消永久删除项目。");
+      setStatus(t("已取消永久删除项目。", "Permanent project deletion canceled."));
       return;
     }
     try {
@@ -498,14 +525,14 @@ export default function App() {
       if (selectedProjectId === project.id) {
         setSelectedProjectId("");
       }
-      setStatus(`已永久删除项目「${project.name}」。`);
+      setStatus(t(`已永久删除项目「${project.name}」。`, `Project "${project.name}" has been permanently deleted.`));
     } catch (err) {
       setError(getErrorMessage(err));
     }
   }
 
   async function renameDocument(document: DocumentRecord) {
-    const title = window.prompt("请输入新的文档名称", document.title)?.trim();
+    const title = window.prompt(t("请输入新的文档名称", "Enter a new document name"), document.title)?.trim();
     if (!title || title === document.title) return;
     try {
       await api.updateDocument(document.id, { title });
@@ -519,8 +546,10 @@ export default function App() {
   }
 
   async function archiveOrRestoreDocument(document: DocumentRecord) {
-    const action = document.archivedAt ? "恢复" : "归档";
-    if (!window.confirm(`${action}文档「${document.title}」？`)) return;
+    const confirmText = document.archivedAt
+      ? t(`恢复文档「${document.title}」？`, `Restore document "${document.title}"?`)
+      : t(`归档文档「${document.title}」？`, `Archive document "${document.title}"?`);
+    if (!window.confirm(confirmText)) return;
     try {
       if (document.archivedAt) {
         await api.restoreDocument(document.id);
@@ -537,10 +566,13 @@ export default function App() {
   }
 
   async function permanentlyDeleteDocument(document: DocumentRecord) {
-    const confirmed = window.confirm(`永久删除文档「${document.title}」？\n\n这会删除相关切片、事件、实体关系，且不可恢复。`);
+    const confirmed = window.confirm(t(
+      `永久删除文档「${document.title}」？\n\n这会删除相关切片、事件、实体关系，且不可恢复。`,
+      `Permanently delete document "${document.title}"?\n\nThis will delete related chunks, event relations, and entity relations. This action cannot be undone.`
+    ));
     if (!confirmed) {
       setError("");
-      setStatus("已取消永久删除文档。");
+      setStatus(t("已取消永久删除文档。", "Permanent document deletion canceled."));
       return;
     }
     try {
@@ -550,7 +582,7 @@ export default function App() {
       if (selectedDocumentId === document.id) {
         setSelectedDocumentId("");
       }
-      setStatus(`已永久删除文档「${document.title}」。`);
+      setStatus(t(`已永久删除文档「${document.title}」。`, `Document "${document.title}" has been permanently deleted.`));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -558,7 +590,7 @@ export default function App() {
 
   async function handleUploadFiles(files: File[]) {
     if (!selectedProjectId) {
-      setError("请先创建或选择项目，再添加文档。");
+      setError(t("请先创建或选择项目，再添加文档。", "Create or select a project before adding documents."));
       return;
     }
     if (files.length === 0) {
@@ -569,14 +601,17 @@ export default function App() {
       return ![".md", ".txt"].includes(extension) || file.size === 0 || file.size > 5 * 1024 * 1024;
     });
     if (invalidFile) {
-      setError(`文件「${invalidFile.name}」不符合要求：只支持非空 .md/.txt，单个文件不超过 5MB。`);
+      setError(t(
+        `文件「${invalidFile.name}」不符合要求：只支持非空 .md/.txt，单个文件不超过 5MB。`,
+        `File "${invalidFile.name}" is invalid: only non-empty .md/.txt files up to 5 MB are supported.`
+      ));
       return;
     }
     try {
       setError("");
-      setStatus(`已提交 ${files.length} 个文档处理任务`);
+      setStatus(t(`已提交 ${files.length} 个文档处理任务`, `${files.length} document processing job(s) submitted`));
       for (const file of files) {
-        setStatus(`正在读取：${file.name}`);
+        setStatus(t(`正在读取：${file.name}`, `Reading: ${file.name}`));
         const content = await file.text();
         const response = await api.createUploadJob({
           sourceId: selectedProjectId,
@@ -587,7 +622,7 @@ export default function App() {
         refreshedUploadJobsRef.current.delete(response.job.id);
         setUploadJobs((current) => [response.job, ...current].slice(0, 20));
       }
-      setStatus("文档正在处理中");
+      setStatus(t("文档正在处理中", "Documents are being processed"));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -684,13 +719,16 @@ export default function App() {
       if (event.toolName === "sag_search") {
         setRunningMcpSearches((current) => [
           ...current,
-          buildRunningMcpSearch(event.toolName, event.arguments)
+          buildRunningMcpSearch(event.toolName, event.arguments, language)
         ]);
-        resetProcess("MCP 搜索语句", getMcpSearchQuery(event.arguments));
+        resetProcess(t("MCP 搜索语句", "MCP search query"), getMcpSearchQuery(event.arguments, language));
         addProcessStep({
           id: "mcp-sag-search-running",
-          title: "SAG 检索执行中",
-          detail: "MCP 工具已发起 sag_search，正在实时接收 SAG 内部检索阶段。",
+          title: t("SAG 检索执行中", "SAG retrieval is running"),
+          detail: t(
+            "MCP 工具已发起 sag_search，正在实时接收 SAG 内部检索阶段。",
+            "The MCP tool has started sag_search and is receiving SAG internal retrieval stages in real time."
+          ),
           status: "running",
           payload: event.arguments
         });
@@ -714,8 +752,8 @@ export default function App() {
         if (event.toolCall.status === "FAILED") {
           setProcessSteps([{
             id: makeStepId("sag-search-failed"),
-            title: "SAG 检索失败",
-            detail: event.toolCall.error ?? "工具返回失败",
+            title: t("SAG 检索失败", "SAG retrieval failed"),
+            detail: event.toolCall.error ?? t("工具返回失败", "Tool returned a failure"),
             status: "failed"
           }]);
           return;
@@ -724,17 +762,17 @@ export default function App() {
         const trace = extractSearchTrace(parsed);
         if (trace) {
           setProcessSteps([
-            buildMcpSearchQueryStep(event.toolCall),
-            ...buildTraceProcessSteps(trace, "SAG 检索链路"),
-            ...buildMcpSearchResultSteps(parsed)
+            buildMcpSearchQueryStep(event.toolCall, language),
+            ...buildTraceProcessSteps(trace, t("SAG 检索链路", "SAG retrieval trace"), language),
+            ...buildMcpSearchResultSteps(parsed, language)
           ]);
         } else {
           setProcessSteps([
-            buildMcpSearchQueryStep(event.toolCall),
+            buildMcpSearchQueryStep(event.toolCall, language),
             {
               id: makeStepId("sag-search-no-trace"),
-              title: "SAG 检索链路",
-              detail: "工具返回了检索结果，但没有返回 trace 字段。",
+              title: t("SAG 检索链路", "SAG retrieval trace"),
+              detail: t("工具返回了检索结果，但没有返回 trace 字段。", "The tool returned retrieval results but did not include a trace field."),
               status: "failed",
               payload: parsed
             }
@@ -748,12 +786,12 @@ export default function App() {
         setMcpDetail(event.detail);
       }
       finishRunningSteps();
-      setStatus("对话完成");
+      setStatus(t("对话完成", "Conversation complete"));
       return;
     }
     if (event.type === "error") {
       addProcessStep({
-        title: "执行失败",
+        title: t("执行失败", "Execution failed"),
         detail: event.message,
         status: "failed"
       });
@@ -778,8 +816,8 @@ export default function App() {
       finishRunningSteps();
       addProcessStep({
         id: "search-complete",
-        title: "检索完成",
-        detail: `返回 ${event.result.sections.length} 个切片结果`,
+        title: t("检索完成", "Search complete"),
+        detail: t(`返回 ${event.result.sections.length} 个切片结果`, `${event.result.sections.length} chunk result(s) returned`),
         status: "done",
         payload: {
           traceId: event.result.traceId,
@@ -794,12 +832,12 @@ export default function App() {
           ? undefined
           : Math.round(performance.now() - searchStartedAtRef.current)
       });
-      setStatus("检索完成");
+      setStatus(t("检索完成", "Search complete"));
       return;
     }
     if (event.type === "error") {
       addProcessStep({
-        title: "检索失败",
+        title: t("检索失败", "Search failed"),
         detail: event.message,
         status: "failed"
       });
@@ -809,17 +847,17 @@ export default function App() {
 
   async function runSearch() {
     if (!selectedProjectId) {
-      setError("请先选择项目。");
+      setError(t("请先选择项目。", "Select a project first."));
       return;
     }
     if (!searchQuery.trim()) {
-      setError("请输入检索问题。");
+      setError(t("请输入检索问题。", "Enter a search question."));
       return;
     }
     setIsSearching(true);
     setSearchResult(null);
     searchStartedAtRef.current = performance.now();
-    resetProcess("开始检索", searchQuery.trim());
+    resetProcess(t("开始检索", "Start search"), searchQuery.trim());
     try {
       setError("");
       await api.streamSearch({
@@ -832,7 +870,7 @@ export default function App() {
       await syncModelLogs();
       setError(getErrorMessage(err));
       addProcessStep({
-        title: "检索失败",
+        title: t("检索失败", "Search failed"),
         detail: getErrorMessage(err),
         status: "failed"
       });
@@ -843,7 +881,7 @@ export default function App() {
 
   async function createMcpSession() {
     if (!selectedProjectId) {
-      setError("请先选择项目。");
+      setError(t("请先选择项目。", "Select a project first."));
       return;
     }
     const response = await api.createMcpSession({ sourceIds: [selectedProjectId] });
@@ -863,10 +901,13 @@ export default function App() {
 
   async function clearCurrentMcpSession() {
     if (!mcpDetail) {
-      setError("请先选择对话。");
+      setError(t("请先选择对话。", "Select a conversation first."));
       return;
     }
-    if (!window.confirm("清空当前对话记录？\n\n这会删除该会话里的消息和工具调用记录，但会保留会话本身。")) {
+    if (!window.confirm(t(
+      "清空当前对话记录？\n\n这会删除该会话里的消息和工具调用记录，但会保留会话本身。",
+      "Clear the current conversation history?\n\nThis will delete messages and tool call records in this session, while keeping the session itself."
+    ))) {
       return;
     }
     try {
@@ -875,7 +916,7 @@ export default function App() {
       setMcpDetail(detail);
       setProcessSteps([]);
       setSearchResult(null);
-      setStatus("对话记录已清空");
+      setStatus(t("对话记录已清空", "Conversation history cleared"));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -883,10 +924,13 @@ export default function App() {
 
   async function deleteCurrentMcpSession() {
     if (!mcpDetail) {
-      setError("请先选择对话。");
+      setError(t("请先选择对话。", "Select a conversation first."));
       return;
     }
-    if (!window.confirm(`删除对话「${mcpDetail.session.title}」？\n\n这会永久删除该会话、消息和工具调用记录，且不可恢复。`)) {
+    if (!window.confirm(t(
+      `删除对话「${mcpDetail.session.title}」？\n\n这会永久删除该会话、消息和工具调用记录，且不可恢复。`,
+      `Delete conversation "${mcpDetail.session.title}"?\n\nThis will permanently delete the session, messages, and tool call records. This action cannot be undone.`
+    ))) {
       return;
     }
     try {
@@ -908,7 +952,7 @@ export default function App() {
       }
       setProcessSteps([]);
       setSearchResult(null);
-      setStatus("对话已删除");
+      setStatus(t("对话已删除", "Conversation deleted"));
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -945,21 +989,21 @@ export default function App() {
     } catch (err) {
       await syncModelLogs();
       if (isAbortError(err)) {
-        setStatus("已停止生成");
+        setStatus(t("已停止生成", "Generation stopped"));
         if (sessionId) {
           await loadMcpSession(sessionId);
           await refreshSessionsForProjects([selectedProjectId]);
         }
         addProcessStep({
-          title: "已停止",
-          detail: "你手动停止了本轮 MCP 对话。",
+          title: t("已停止", "Stopped"),
+          detail: t("你手动停止了本轮 MCP 对话。", "You manually stopped this MCP conversation turn."),
           status: "done"
         });
         return;
       }
       setError(getErrorMessage(err));
       addProcessStep({
-        title: "对话失败",
+        title: t("对话失败", "Conversation failed"),
         detail: getErrorMessage(err),
         status: "failed"
       });
@@ -975,7 +1019,7 @@ export default function App() {
 
   function stopMcpMessage() {
     if (!isMcpRunning) return;
-    setStatus("正在停止生成...");
+    setStatus(t("正在停止生成...", "Stopping generation..."));
     mcpAbortControllerRef.current?.abort();
   }
 
@@ -1001,7 +1045,7 @@ export default function App() {
       setError("");
       const response = await api.updateAiSettings(input);
       setAiSettings(response.settings);
-      setStatus("设置已保存");
+      setStatus(t("设置已保存", "Settings saved"));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -1103,6 +1147,9 @@ export default function App() {
                 <SettingsPanel
                   settings={aiSettings}
                   isSaving={isSavingSettings}
+                  language={language}
+                  languagePreference={languagePreference}
+                  onLanguagePreferenceChange={setLanguagePreference}
                   onSave={(input) => void saveAiSettings(input)}
                 />
               </section>
@@ -1219,6 +1266,7 @@ function ProjectRail(props: {
   onCreateSession: () => void;
   onSelectProjectSession: (projectId: string, sessionId: string) => void;
 }) {
+  const { t } = useI18n();
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -1259,15 +1307,15 @@ function ProjectRail(props: {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">SAG</div>
-                <div className="truncate text-xs text-muted-foreground">对话式检索工作台</div>
+                <div className="truncate text-xs text-muted-foreground">{t("对话式检索工作台", "Conversational retrieval workbench")}</div>
               </div>
             </div>
             <Button
               variant={props.isSettingsOpen ? "secondary" : "ghost"}
               size="icon"
               className="h-8 w-8 shrink-0"
-              title="全局设置"
-              aria-label="全局设置"
+              title={t("全局设置", "Global settings")}
+              aria-label={t("全局设置", "Global settings")}
               onClick={props.onOpenSettings}
             >
               <Settings className="h-4 w-4" />
@@ -1276,10 +1324,10 @@ function ProjectRail(props: {
         </div>
 
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="text-xs font-medium text-muted-foreground">项目</div>
+          <div className="text-xs font-medium text-muted-foreground">{t("项目", "Projects")}</div>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <input type="checkbox" checked={props.showArchived} onChange={(event) => props.onToggleArchived(event.target.checked)} />
-            归档
+            {t("归档", "Archived")}
           </label>
         </div>
 
@@ -1290,10 +1338,10 @@ function ProjectRail(props: {
             onClick={openCreateProjectDialog}
           >
             <Plus className="h-4 w-4 shrink-0" />
-            新建项目
+            {t("新建项目", "New project")}
           </button>
           {props.projects.length === 0 ? (
-            <EmptyLine text="暂无项目，请先新建项目。" />
+            <EmptyLine text={t("暂无项目，请先新建项目。", "No projects yet. Create a project first.")} />
           ) : props.projects.map((project) => {
           const selected = project.id === props.selectedProjectId;
           const menuOpen = openProjectMenuId === project.id;
@@ -1306,8 +1354,10 @@ function ProjectRail(props: {
                 <button
                   type="button"
                   className="ml-1 mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
-                  title={expanded ? "收起项目对话" : "展开项目对话"}
-                  aria-label={expanded ? `收起项目对话：${project.name}` : `展开项目对话：${project.name}`}
+                  title={expanded ? t("收起项目对话", "Collapse project conversations") : t("展开项目对话", "Expand project conversations")}
+                  aria-label={expanded
+                    ? t(`收起项目对话：${project.name}`, `Collapse project conversations: ${project.name}`)
+                    : t(`展开项目对话：${project.name}`, `Expand project conversations: ${project.name}`)}
                   onClick={(event) => {
                     event.stopPropagation();
                     closeMenu();
@@ -1331,7 +1381,7 @@ function ProjectRail(props: {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{project.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {project.archivedAt ? "已归档" : shortId(project.id)}
+                      {project.archivedAt ? t("已归档", "Archived") : shortId(project.id)}
                     </span>
                   </span>
                 </button>
@@ -1341,8 +1391,8 @@ function ProjectRail(props: {
                     "mr-2 mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus:bg-background focus:text-foreground",
                     menuOpen || selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                   )}
-                  title="项目操作"
-                  aria-label={`项目操作：${project.name}`}
+                  title={t("项目操作", "Project actions")}
+                  aria-label={t(`项目操作：${project.name}`, `Project actions: ${project.name}`)}
                   onClick={(event) => {
                     event.stopPropagation();
                     setOpenProjectMenuId((current) => current === project.id ? null : project.id);
@@ -1362,7 +1412,7 @@ function ProjectRail(props: {
                       props.onRenameProject(project);
                     }}
                   >
-                    重命名
+                    {t("重命名", "Rename")}
                   </ProjectMenuItem>
                   <ProjectMenuItem
                     onClick={() => {
@@ -1370,7 +1420,7 @@ function ProjectRail(props: {
                       props.onArchiveOrRestoreProject(project);
                     }}
                   >
-                    {project.archivedAt ? "恢复" : "归档"}
+                    {project.archivedAt ? t("恢复", "Restore") : t("归档", "Archive")}
                   </ProjectMenuItem>
                   <ProjectMenuItem
                     danger
@@ -1379,7 +1429,7 @@ function ProjectRail(props: {
                       props.onDeleteProject(project);
                     }}
                   >
-                    永久删除
+                    {t("永久删除", "Delete forever")}
                   </ProjectMenuItem>
                 </div>
               ) : null}
@@ -1393,11 +1443,11 @@ function ProjectRail(props: {
                       disabled={props.isSessionBusy}
                     >
                       <Plus className="h-3.5 w-3.5 shrink-0" />
-                      新建对话
+                      {t("新建对话", "New chat")}
                     </button>
                   ) : null}
                   {projectSessions.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">暂无对话</div>
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("暂无对话", "No chats")}</div>
                   ) : projectSessions.map((session) => {
                     const sessionSelected = session.id === props.selectedSessionId;
                     return (
@@ -1429,8 +1479,8 @@ function ProjectRail(props: {
       {createProjectDialogOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" role="presentation">
           <div className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
-            <div id="create-project-title" className="text-sm font-semibold">新建项目</div>
-            <p className="mt-1 text-xs text-muted-foreground">输入项目名称后创建，文档和对话都会归属到这个项目。</p>
+            <div id="create-project-title" className="text-sm font-semibold">{t("新建项目", "New project")}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{t("输入项目名称后创建，文档和对话都会归属到这个项目。", "Enter a project name. Documents and chats will belong to this project.")}</p>
             <Input
               autoFocus
               className="mt-4"
@@ -1445,16 +1495,16 @@ function ProjectRail(props: {
                   void submitCreateProject();
                 }
               }}
-              placeholder="项目名称"
+              placeholder={t("项目名称", "Project name")}
               disabled={isCreatingProject}
             />
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={closeCreateProjectDialog} disabled={isCreatingProject}>
-                取消
+                {t("取消", "Cancel")}
               </Button>
               <Button size="sm" onClick={() => void submitCreateProject()} disabled={!canCreateProject}>
                 {isCreatingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                确定
+                {t("确定", "Confirm")}
               </Button>
             </div>
           </div>
@@ -1484,10 +1534,11 @@ function MainWorkspaceTabs(props: {
   view: WorkspaceView;
   onChange: (view: Exclude<WorkspaceView, "settings">) => void;
 }) {
+  const { t } = useI18n();
   const tabs: Array<{ value: Exclude<WorkspaceView, "settings">; label: string }> = [
-    { value: "chat", label: "对话" },
-    { value: "documents", label: "文档" },
-    { value: "graph", label: "图谱" },
+    { value: "chat", label: t("对话", "Chat") },
+    { value: "documents", label: t("文档", "Documents") },
+    { value: "graph", label: t("图谱", "Graph") },
     { value: "mcp", label: "MCP" }
   ];
   return (
@@ -1524,6 +1575,7 @@ function ConversationWorkspace(props: {
   onStop: () => void;
   onSend: () => void;
 }) {
+  const { t } = useI18n();
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1533,7 +1585,7 @@ function ConversationWorkspace(props: {
   if (!props.project) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center px-6">
-        <EmptyState title="先创建项目" description="项目是文档、切片、事件、实体和 MCP 对话的共同归属。" />
+        <EmptyState title={t("先创建项目", "Create a project first")} description={t("项目是文档、切片、事件、实体和 MCP 对话的共同归属。", "A project contains documents, chunks, events, entities, and MCP chats.")} />
       </section>
     );
   }
@@ -1542,19 +1594,19 @@ function ConversationWorkspace(props: {
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 md:flex-nowrap md:items-center md:px-6">
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold">{props.detail?.session.title ?? "新对话"}</h1>
+          <h1 className="truncate text-base font-semibold">{props.detail?.session.title ?? t("新对话", "New chat")}</h1>
           <p className="truncate text-xs text-muted-foreground">
-            {props.detail ? `${formatModelName(props.detail.session.model)} · ${shortId(props.detail.session.id)}` : "新建会话后开始测试 MCP 工具"}
+            {props.detail ? `${formatModelName(props.detail.session.model, t)} · ${shortId(props.detail.session.id)}` : t("新建会话后开始测试 MCP 工具", "Create a chat to test MCP tools")}
           </p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={props.onClearSession} disabled={!props.detail || props.isRunning}>
             <RotateCcw className="h-4 w-4" />
-            清空记录
+            {t("清空记录", "Clear history")}
           </Button>
           <Button variant="outline" size="sm" onClick={props.onDeleteSession} disabled={!props.detail || props.isRunning}>
             <Trash2 className="h-4 w-4" />
-            删除对话
+            {t("删除对话", "Delete chat")}
           </Button>
         </div>
       </div>
@@ -1562,7 +1614,7 @@ function ConversationWorkspace(props: {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {!props.detail || props.detail.messages.length === 0 ? (
-            <EmptyState title="还没有对话" description="输入问题后，系统会通过 MCP 工具检索当前项目资料。" />
+            <EmptyState title={t("还没有对话", "No conversation yet")} description={t("输入问题后，系统会通过 MCP 工具检索当前项目资料。", "Ask a question and the system will retrieve current project documents through MCP tools.")} />
           ) : props.detail.messages.map((message) => {
             const citations = getMessageCitations(message);
             return (
@@ -1572,11 +1624,11 @@ function ConversationWorkspace(props: {
                   message.role === "user" ? "bg-primary text-primary-foreground" : "border border-border bg-muted/35"
                 )}>
                   <div className="mb-1 flex items-center gap-2 text-xs opacity-70">
-                    {formatMessageRole(message.role)}
+                    {formatMessageRole(message.role, t)}
                     <span>{formatDate(message.createdAt)}</span>
                   </div>
                   <MarkdownMessage
-                    content={formatMessageContent(message.content)}
+                    content={formatMessageContent(message.content, t)}
                     citations={citations}
                     onOpenCitation={props.onOpenCitation}
                   />
@@ -1591,7 +1643,7 @@ function ConversationWorkspace(props: {
           {props.pendingUserMessage ? (
             <div className="flex justify-end">
               <div className="max-w-[86%] rounded-lg bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground">
-                <div className="mb-1 flex items-center gap-2 text-xs opacity-70">用户</div>
+                <div className="mb-1 flex items-center gap-2 text-xs opacity-70">{t("用户", "User")}</div>
                 <MarkdownMessage content={props.pendingUserMessage} />
               </div>
             </div>
@@ -1606,8 +1658,8 @@ function ConversationWorkspace(props: {
           {props.streamingAssistantText ? (
             <div className="flex justify-start">
               <div className="max-w-[86%] rounded-lg border border-border bg-muted/35 px-3 py-2 text-sm leading-6">
-                <div className="mb-1 flex items-center gap-2 text-xs opacity-70">助手</div>
-                <MarkdownMessage content={formatMessageContent(props.streamingAssistantText)} />
+                <div className="mb-1 flex items-center gap-2 text-xs opacity-70">{t("助手", "Assistant")}</div>
+                <MarkdownMessage content={formatMessageContent(props.streamingAssistantText, t)} />
               </div>
             </div>
           ) : null}
@@ -1630,7 +1682,7 @@ function ConversationWorkspace(props: {
                 }
               }
             }}
-            placeholder="基于当前项目资料提问..."
+            placeholder={t("基于当前项目资料提问...", "Ask about the current project documents...")}
           />
           <Button
             className="self-end"
@@ -1639,7 +1691,7 @@ function ConversationWorkspace(props: {
             disabled={!props.isRunning && !props.input.trim()}
           >
             {props.isRunning ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            {props.isRunning ? "停止" : "发送"}
+            {props.isRunning ? t("停止", "Stop") : t("发送", "Send")}
           </Button>
         </div>
       </div>
@@ -1648,30 +1700,31 @@ function ConversationWorkspace(props: {
 }
 
 function RunningMcpSearchPanel(props: { searches: RunningMcpSearch[] }) {
+  const { t } = useI18n();
   const searchCount = props.searches.length;
   return (
     <div className="max-w-[86%] rounded-lg border border-border bg-muted/35 px-3 py-2 text-sm leading-6">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-muted-foreground">
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-        <span className="font-medium text-foreground">正在使用 MCP 检索</span>
-        <Badge className="border-border bg-background text-muted-foreground">{searchCount} 次搜索</Badge>
+        <span className="font-medium text-foreground">{t("正在使用 MCP 检索", "Using MCP retrieval")}</span>
+        <Badge className="border-border bg-background text-muted-foreground">{t(`${searchCount} 次搜索`, `${searchCount} search(es)`)}</Badge>
       </div>
       {searchCount === 0 ? (
-        <div className="text-sm text-muted-foreground">正在分析问题，等待 MCP 搜索语句...</div>
+        <div className="text-sm text-muted-foreground">{t("正在分析问题，等待 MCP 搜索语句...", "Analyzing the question and waiting for MCP search queries...")}</div>
       ) : (
         <div className="space-y-1.5">
           {props.searches.map((search, index) => (
             <div key={search.id} className="rounded-md border border-border bg-background/70 px-2.5 py-1.5">
               <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                 <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                  搜索 {index + 1}：
+                  {t(`搜索 ${index + 1}：`, `Search ${index + 1}:`)}
                 </span>
                 <span className="min-w-0 flex-1 break-words text-sm text-foreground">
                   {search.query}
                 </span>
               </div>
               {search.searchMode ? (
-                <div className="mt-1 text-xs text-muted-foreground">模式：{search.searchMode}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{t("模式", "Mode")}：{search.searchMode}</div>
               ) : null}
             </div>
           ))}
@@ -1682,9 +1735,10 @@ function RunningMcpSearchPanel(props: { searches: RunningMcpSearch[] }) {
 }
 
 function CitationStrip(props: { citations: AnswerCitation[]; onOpenCitation: (citation: AnswerCitation) => void }) {
+  const { t } = useI18n();
   return (
     <div className="mt-3 border-t border-border pt-2">
-      <div className="mb-1 text-xs font-medium text-muted-foreground">引用原文</div>
+      <div className="mb-1 text-xs font-medium text-muted-foreground">{t("引用原文", "Source citations")}</div>
       <div className="flex flex-wrap gap-1.5">
         {props.citations.map((citation) => (
           <button
@@ -1735,12 +1789,13 @@ function ProjectDocumentsWorkspace(props: {
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
+  const { language, t } = useI18n();
   const [resultTitleQuery, setResultTitleQuery] = useState("");
   const [resultPage, setResultPage] = useState(1);
   const searchableResultView = props.resultView === "chunks" || props.resultView === "events" || props.resultView === "entities";
   const normalizedResultTitleQuery = normalizeKeyword(resultTitleQuery);
   const filteredChunks = useMemo(
-    () => filterByKeyword(props.chunks, normalizedResultTitleQuery, (chunk) => chunk.heading || "未命名切片"),
+    () => filterByKeyword(props.chunks, normalizedResultTitleQuery, (chunk) => chunk.heading || t("未命名切片", "Untitled chunk")),
     [normalizedResultTitleQuery, props.chunks]
   );
   const filteredEvents = useMemo(
@@ -1794,16 +1849,16 @@ function ProjectDocumentsWorkspace(props: {
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">项目文档</h2>
+          <h2 className="truncate text-base font-semibold">{t("项目文档", "Project documents")}</h2>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {props.project?.name ?? "请选择项目"}
+            {props.project?.name ?? t("请选择项目", "Select a project")}
             {props.selectedDocument ? ` · ${props.selectedDocument.title}` : ""}
           </p>
         </div>
         {props.project ? (
           <Button size="sm" onClick={() => props.fileInputRef.current?.click()}>
             {props.hasActiveUploads ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            添加文档
+            {t("添加文档", "Add document")}
           </Button>
         ) : null}
       </div>
@@ -1823,16 +1878,16 @@ function ProjectDocumentsWorkspace(props: {
 
       {!props.project ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-          <EmptyState title="没有项目" description="创建项目后，才能上传文档并查看处理结果。" />
+          <EmptyState title={t("没有项目", "No project")} description={t("创建项目后，才能上传文档并查看处理结果。", "Create a project before uploading documents and viewing processing results.")} />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[340px_minmax(0,1fr)]">
           <div className="min-h-0 overflow-y-auto border-r border-border p-4 scrollbar-thin">
             <div className="mb-4 grid grid-cols-2 gap-2">
-              <Metric label="文档" value={props.projectStats?.documentCount ?? props.documents.length} />
-              <Metric label="切片" value={props.projectStats?.chunkCount ?? props.chunks.length} />
-              <Metric label="事件" value={props.projectStats?.eventCount ?? props.events.length} />
-              <Metric label="实体" value={props.projectStats?.entityCount ?? props.entities.length} />
+              <Metric label={t("文档", "Documents")} value={props.projectStats?.documentCount ?? props.documents.length} />
+              <Metric label={t("切片", "Chunks")} value={props.projectStats?.chunkCount ?? props.chunks.length} />
+              <Metric label={t("事件", "Events")} value={props.projectStats?.eventCount ?? props.events.length} />
+              <Metric label={t("实体", "Entities")} value={props.projectStats?.entityCount ?? props.entities.length} />
             </div>
 
             {props.uploadJobs.length > 0 ? (
@@ -1844,7 +1899,7 @@ function ProjectDocumentsWorkspace(props: {
             ) : null}
 
             <PanelSection
-              title="文档"
+              title={t("文档", "Documents")}
               action={(
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <input
@@ -1852,12 +1907,12 @@ function ProjectDocumentsWorkspace(props: {
                     checked={props.showArchivedDocuments}
                     onChange={(event) => props.onToggleArchivedDocuments(event.target.checked)}
                   />
-                  归档
+                  {t("归档", "Archived")}
                 </label>
               )}
             >
               {props.documents.length === 0 ? (
-                <EmptyLine text="当前项目还没有文档。" />
+                <EmptyLine text={t("当前项目还没有文档。", "The current project has no documents yet.")} />
               ) : props.documents.map((document) => (
                 <div key={document.id} className={cn("rounded-md border border-border", document.id === props.selectedDocumentId && "bg-accent")}>
                   <button
@@ -1868,17 +1923,17 @@ function ProjectDocumentsWorkspace(props: {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{document.title}</span>
                       <span className="block text-xs text-muted-foreground">
-                        {document.archivedAt ? "已归档" : `${document.parseStatus} · ${formatDate(document.createdAt)}`}
+                        {document.archivedAt ? t("已归档", "Archived") : `${document.parseStatus} · ${formatDate(document.createdAt)}`}
                       </span>
                     </span>
                   </button>
                   {document.id === props.selectedDocumentId ? (
                     <div className="flex flex-wrap gap-1 px-3 pb-2">
-                      <MiniButton onClick={() => props.onRenameDocument(document)}>重命名</MiniButton>
+                      <MiniButton onClick={() => props.onRenameDocument(document)}>{t("重命名", "Rename")}</MiniButton>
                       <MiniButton onClick={() => props.onArchiveOrRestoreDocument(document)}>
-                        {document.archivedAt ? "恢复" : "归档"}
+                        {document.archivedAt ? t("恢复", "Restore") : t("归档", "Archive")}
                       </MiniButton>
-                      <MiniButton danger onClick={() => props.onDeleteDocument(document)}>永久删除</MiniButton>
+                      <MiniButton danger onClick={() => props.onDeleteDocument(document)}>{t("永久删除", "Delete forever")}</MiniButton>
                     </div>
                   ) : null}
                 </div>
@@ -1897,7 +1952,7 @@ function ProjectDocumentsWorkspace(props: {
                   )}
                   onClick={() => props.onSetResultView(view)}
                 >
-                  {resultViewLabel(view)}
+                  {resultViewLabel(view, language)}
                 </button>
               ))}
             </div>
@@ -1905,7 +1960,7 @@ function ProjectDocumentsWorkspace(props: {
             <div className="mt-4">
               {searchableResultView ? (
                 <ResultTitleSearch
-                  label={resultViewLabel(props.resultView)}
+                  label={resultViewLabel(props.resultView, language)}
                   query={resultTitleQuery}
                   totalCount={activeTotalCount}
                   matchedCount={activeResultCount}
@@ -1957,12 +2012,13 @@ function ProjectGraphWorkspace(props: {
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
+  const { t, language } = useI18n();
   const graph = props.graph;
 
   if (!props.project) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center px-6">
-        <EmptyState title="先创建项目" description="项目里有文档、事件和实体后，图谱会在这里显示。" />
+        <EmptyState title={t("先创建项目", "Create a project first")} description={t("项目里有文档、事件和实体后，图谱会在这里显示。", "The graph appears after the project has documents, events, and entities.")} />
       </section>
     );
   }
@@ -1970,7 +2026,7 @@ function ProjectGraphWorkspace(props: {
   if (!graph || graph.entities.length === 0 || graph.events.length === 0) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center px-6">
-        <EmptyState title="暂无图谱数据" description="上传并完成提取后，可以查看实体、事件和关系。" />
+        <EmptyState title={t("暂无图谱数据", "No graph data yet")} description={t("上传并完成提取后，可以查看实体、事件和关系。", "Upload documents and finish extraction to view entities, events, and relations.")} />
       </section>
     );
   }
@@ -1980,6 +2036,7 @@ function ProjectGraphWorkspace(props: {
       <div className="min-h-0 flex-1">
         <ProjectGraphFlow
           graph={graph}
+          language={language}
           onOpenEvent={props.onOpenEvent}
           onOpenEntity={props.onOpenEntity}
         />
@@ -1997,12 +2054,13 @@ function ActivityPanel(props: {
   onRefreshModelLogs: () => void;
   onClearModelLogs: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <aside className={cn("flex min-h-0 flex-col bg-background", props.className)}>
       <div className="border-b border-border p-4">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{contextPanelModeLabel(props.mode)}</h2>
-          <p className="mt-1 truncate text-xs text-muted-foreground">搜索链路与模型原始调用</p>
+          <h2 className="truncate text-sm font-semibold">{contextPanelModeLabel(props.mode, t)}</h2>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{t("搜索链路与模型原始调用", "Search trace and raw model calls")}</p>
         </div>
         <div className="mt-3 grid grid-cols-2 rounded-md border border-border p-1">
           {(["process", "logs"] as ContextPanelMode[]).map((mode) => (
@@ -2015,7 +2073,7 @@ function ActivityPanel(props: {
               )}
               onClick={() => props.onSetMode(mode)}
             >
-              {contextPanelModeLabel(mode)}
+              {contextPanelModeLabel(mode, t)}
             </button>
           ))}
         </div>
@@ -2037,8 +2095,9 @@ function ActivityPanel(props: {
 }
 
 function ProcessPanel({ steps }: { steps: ProcessStep[] }) {
+  const { t } = useI18n();
   if (steps.length === 0) {
-    return <EmptyState title="还没有搜索过程" description="每次对话或检索都会清空这里，并展示新的执行链路。" />;
+    return <EmptyState title={t("还没有搜索过程", "No search trace yet")} description={t("每次对话或检索都会清空这里，并展示新的执行链路。", "Each chat or search clears this panel and shows the latest execution trace.")} />;
   }
 
   return (
@@ -2060,15 +2119,15 @@ function ProcessPanel({ steps }: { steps: ProcessStep[] }) {
               </div>
               <Badge className={processStatusClassName(step.status)}>
                 {step.status === "running" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                {processStatusLabel(step.status)}
+                {processStatusLabel(step.status, t)}
               </Badge>
             </div>
             {step.durationMs != null ? (
-              <div className="pl-7 text-xs text-muted-foreground">耗时：{step.durationMs} 毫秒</div>
+              <div className="pl-7 text-xs text-muted-foreground">{t(`耗时：${step.durationMs} 毫秒`, `Duration: ${step.durationMs} ms`)}</div>
             ) : null}
             {step.payload !== undefined ? (
               <div className="pl-7">
-                <JsonBlock title="数据" value={step.payload} compact />
+                <JsonBlock title={t("数据", "Data")} value={step.payload} compact />
               </div>
             ) : null}
           </CardContent>
@@ -2083,6 +2142,7 @@ function RawLogsPanel(props: {
   onRefresh: () => void;
   onClear: () => void;
 }) {
+  const { t } = useI18n();
   const latestLogs = [...props.logs].sort((a, b) => b.sequence - a.sequence);
   const llmLogCount = props.logs.filter((log) => log.kind === "llm").length;
   const embeddingLogCount = props.logs.filter((log) => log.kind === "embedding").length;
@@ -2090,7 +2150,7 @@ function RawLogsPanel(props: {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 text-xs text-muted-foreground">
-          <div>浏览器缓存 {props.logs.length} 条</div>
+          <div>{t(`浏览器缓存 ${props.logs.length} 条`, `Browser cache: ${props.logs.length} item(s)`)}</div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             <Badge className="border-border bg-muted text-muted-foreground">LLM {llmLogCount}</Badge>
             <Badge className="border-border bg-muted text-muted-foreground">Embedding {embeddingLogCount}</Badge>
@@ -2098,16 +2158,16 @@ function RawLogsPanel(props: {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={props.onRefresh}>
-            同步日志
+            {t("同步日志", "Sync logs")}
           </Button>
           <Button variant="outline" size="sm" onClick={props.onClear} disabled={props.logs.length === 0}>
             <Trash2 className="h-4 w-4" />
-            删除日志
+            {t("删除日志", "Delete logs")}
           </Button>
         </div>
       </div>
       {latestLogs.length === 0 ? (
-        <EmptyState title="暂无原始日志" description="上传、检索或对话触发 LLM / Embedding 后会显示原始请求和返回。" />
+        <EmptyState title={t("暂无原始日志", "No raw logs yet")} description={t("上传、检索或对话触发 LLM / Embedding 后会显示原始请求和返回。", "Raw requests and responses appear after upload, search, or chat triggers LLM / Embedding calls.")} />
       ) : latestLogs.map((log) => (
         <Card key={log.id} className={cn(log.status === "FAILED" && "border-red-200 bg-red-50/60")}>
           <CardContent className="space-y-3">
@@ -2118,15 +2178,15 @@ function RawLogsPanel(props: {
                   <div className="truncate text-sm font-semibold">{log.operation}</div>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  #{log.sequence} · {formatDate(log.createdAt)} · {log.durationMs} 毫秒
+                  #{log.sequence} · {formatDate(log.createdAt)} · {log.durationMs} {t("毫秒", "ms")}
                 </div>
               </div>
               <Badge className={log.status === "FAILED" ? "border-red-200 bg-red-50 text-red-700" : ""}>
-                {log.status === "FAILED" ? "失败" : "成功"}
+                {log.status === "FAILED" ? t("失败", "Failed") : t("成功", "Succeeded")}
               </Badge>
             </div>
-            <JsonBlock title="请求" value={log.request} compact preserveRaw />
-            {log.response !== undefined ? <JsonBlock title="返回" value={log.response} compact preserveRaw /> : null}
+            <JsonBlock title={t("请求", "Request")} value={log.request} compact preserveRaw />
+            {log.response !== undefined ? <JsonBlock title={t("返回", "Response")} value={log.response} compact preserveRaw /> : null}
             {log.error ? (
               <div className="rounded-md bg-red-50 p-2 text-xs leading-5 text-red-700">{log.error}</div>
             ) : null}
@@ -2142,6 +2202,7 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useI18n();
   const activeCount = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING").length;
   const completedCount = jobs.filter((job) => job.status === "COMPLETED").length;
   const failedCount = jobs.filter((job) => job.status === "FAILED").length;
@@ -2154,17 +2215,17 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
         onClick={onToggle}
       >
         <div className="min-w-0">
-          <div className="text-xs font-medium text-muted-foreground">处理队列</div>
+          <div className="text-xs font-medium text-muted-foreground">{t("处理队列", "Processing queue")}</div>
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
             {activeCount > 0
-              ? `${activeCount} 个任务处理中`
-              : `已收起：完成 ${completedCount}，失败 ${failedCount}`}
-            {latestJob ? ` · 最近：${latestJob.title || latestJob.fileName}` : ""}
+              ? t(`${activeCount} 个任务处理中`, `${activeCount} job(s) processing`)
+              : t(`已收起：完成 ${completedCount}，失败 ${failedCount}`, `Collapsed: ${completedCount} completed, ${failedCount} failed`)}
+            {latestJob ? t(` · 最近：${latestJob.title || latestJob.fileName}`, ` · Latest: ${latestJob.title || latestJob.fileName}`) : ""}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {activeCount > 0 ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-          <Badge>{expanded ? "收起" : "展开"}</Badge>
+          <Badge>{expanded ? t("收起", "Collapse") : t("展开", "Expand")}</Badge>
         </div>
       </button>
       {expanded ? (
@@ -2178,7 +2239,7 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">{job.fileName}</div>
                   </div>
                   <Badge className={job.status === "FAILED" ? "border-red-200 bg-red-50 text-red-700" : ""}>
-                    {uploadStatusLabel(job.status)}
+                    {uploadStatusLabel(job.status, t)}
                   </Badge>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -2191,17 +2252,17 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
                   />
                 </div>
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                  <span className="min-w-0 truncate">{uploadStageLabel(job.stage)} · {job.message}</span>
+                  <span className="min-w-0 truncate">{uploadStageLabel(job.stage, t)} · {job.message}</span>
                   <span className="shrink-0">{Math.round(job.progress)}%</span>
                 </div>
                 {job.totalChunks ? (
                   <div className="text-xs text-muted-foreground">
-                    切片进度：{job.currentChunk ?? 0}/{job.totalChunks}
+                    {t(`切片进度：${job.currentChunk ?? 0}/${job.totalChunks}`, `Chunk progress: ${job.currentChunk ?? 0}/${job.totalChunks}`)}
                   </div>
                 ) : null}
                 {job.status === "COMPLETED" ? (
                   <div className="text-xs text-muted-foreground">
-                    已生成 {job.chunkCount ?? 0} 个切片，{job.eventCount ?? 0} 个事件
+                    {t(`已生成 ${job.chunkCount ?? 0} 个切片，${job.eventCount ?? 0} 个事件`, `Generated ${job.chunkCount ?? 0} chunk(s), ${job.eventCount ?? 0} event(s)`)}
                   </div>
                 ) : null}
                 {job.error ? (
@@ -2222,33 +2283,34 @@ function OverviewPanel(props: {
   events: EventRecord[];
   entities: EntityRecord[];
 }) {
+  const { t } = useI18n();
   if (!props.document) {
-    return <EmptyState title="未选择文档" description="选择文档后可查看处理结果。" />;
+    return <EmptyState title={t("未选择文档", "No document selected")} description={t("选择文档后可查看处理结果。", "Select a document to view processing results.")} />;
   }
   return (
     <div className="space-y-3">
       <Card>
         <CardContent className="space-y-2">
           <div className="text-sm font-semibold">{props.document.title}</div>
-          <div className="text-xs text-muted-foreground">处理状态：{props.document.parseStatus}</div>
-          <div className="text-xs text-muted-foreground">创建时间：{formatDate(props.document.createdAt)}</div>
+          <div className="text-xs text-muted-foreground">{t("处理状态", "Processing status")}：{props.document.parseStatus}</div>
+          <div className="text-xs text-muted-foreground">{t("创建时间", "Created at")}：{formatDate(props.document.createdAt)}</div>
         </CardContent>
       </Card>
       <div className="grid grid-cols-3 gap-2">
-        <Metric label="切片" value={props.chunks.length} />
-        <Metric label="事件" value={props.events.length} />
-        <Metric label="实体" value={props.entities.length} />
+        <Metric label={t("切片", "Chunks")} value={props.chunks.length} />
+        <Metric label={t("事件", "Events")} value={props.events.length} />
+        <Metric label={t("实体", "Entities")} value={props.entities.length} />
       </div>
       <Card>
         <CardContent className="space-y-2">
-          <div className="text-sm font-semibold">Embedding 状态</div>
+          <div className="text-sm font-semibold">{t("Embedding 状态", "Embedding status")}</div>
           <div className="grid grid-cols-3 gap-2">
-            <Metric label="切片向量" value={props.chunks.filter((chunk) => Boolean(chunk.embedding)).length} />
-            <Metric label="事件向量" value={props.events.filter((event) => Boolean(event.titleEmbedding || event.contentEmbedding)).length} />
-            <Metric label="实体向量" value={props.entities.filter((entity) => Boolean(entity.embedding)).length} />
+            <Metric label={t("切片向量", "Chunk vectors")} value={props.chunks.filter((chunk) => Boolean(chunk.embedding)).length} />
+            <Metric label={t("事件向量", "Event vectors")} value={props.events.filter((event) => Boolean(event.titleEmbedding || event.contentEmbedding)).length} />
+            <Metric label={t("实体向量", "Entity vectors")} value={props.entities.filter((entity) => Boolean(entity.embedding)).length} />
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            列表卡片会显示维度和前 8 位样本，用来确认向量已经真实写入数据库。
+            {t("列表卡片会显示维度和前 8 位样本，用来确认向量已经真实写入数据库。", "List cards show dimensions and the first 8 sample values to confirm vectors were written to the database.")}
           </p>
         </CardContent>
       </Card>
@@ -2264,6 +2326,7 @@ function ResultTitleSearch(props: {
   onQueryChange: (value: string) => void;
   onClear: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mb-3 space-y-1.5">
       <div className="flex items-center gap-2">
@@ -2273,15 +2336,17 @@ function ResultTitleSearch(props: {
             className="h-9 pl-8"
             value={props.query}
             onChange={(event) => props.onQueryChange(event.target.value)}
-            placeholder={`按${props.label}标题搜索`}
+            placeholder={t(`按${props.label}标题搜索`, `Search ${props.label} titles`)}
           />
         </div>
         {props.query.trim() ? (
-          <Button variant="ghost" size="sm" onClick={props.onClear}>清空</Button>
+          <Button variant="ghost" size="sm" onClick={props.onClear}>{t("清空", "Clear")}</Button>
         ) : null}
       </div>
       <div className="text-xs text-muted-foreground">
-        {props.query.trim() ? `匹配 ${props.matchedCount}/${props.totalCount}` : `共 ${props.totalCount} 条`}
+        {props.query.trim()
+          ? t(`匹配 ${props.matchedCount}/${props.totalCount}`, `Matched ${props.matchedCount}/${props.totalCount}`)
+          : t(`共 ${props.totalCount} 条`, `${props.totalCount} total`)}
       </div>
     </div>
   );
@@ -2294,13 +2359,14 @@ function PaginationControls(props: {
   className?: string;
   onPageChange: (page: number) => void;
 }) {
+  const { t } = useI18n();
   const pageCount = Math.max(1, Math.ceil(props.totalCount / props.pageSize));
   const from = props.totalCount === 0 ? 0 : (props.page - 1) * props.pageSize + 1;
   const to = Math.min(props.page * props.pageSize, props.totalCount);
   return (
     <div className={cn("flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3", props.className)}>
       <div className="text-xs text-muted-foreground">
-        第 {props.page}/{pageCount} 页 · {from}-{to} / {props.totalCount} 条
+        {t(`第 ${props.page}/${pageCount} 页 · ${from}-${to} / ${props.totalCount} 条`, `Page ${props.page}/${pageCount} · ${from}-${to} / ${props.totalCount}`)}
       </div>
       <div className="flex items-center gap-2">
         <Button
@@ -2310,7 +2376,7 @@ function PaginationControls(props: {
           onClick={() => props.onPageChange(Math.max(1, props.page - 1))}
         >
           <ChevronLeft className="h-4 w-4" />
-          上一页
+          {t("上一页", "Previous")}
         </Button>
         <Button
           variant="outline"
@@ -2318,7 +2384,7 @@ function PaginationControls(props: {
           disabled={props.page >= pageCount}
           onClick={() => props.onPageChange(Math.min(pageCount, props.page + 1))}
         >
-          下一页
+          {t("下一页", "Next")}
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
@@ -2327,10 +2393,11 @@ function PaginationControls(props: {
 }
 
 function ChunksPanel({ chunks, hasFilter }: { chunks: ChunkRecord[]; hasFilter?: boolean }) {
+  const { t } = useI18n();
   if (chunks.length === 0) {
     return hasFilter
-      ? <EmptyState title="没有匹配的切片" description="换一个标题关键字再试。" />
-      : <EmptyState title="暂无切片" description="文档处理后会在这里展示切片。" />;
+      ? <EmptyState title={t("没有匹配的切片", "No matching chunks")} description={t("换一个标题关键字再试。", "Try another title keyword.")} />
+      : <EmptyState title={t("暂无切片", "No chunks yet")} description={t("文档处理后会在这里展示切片。", "Chunks appear here after document processing.")} />;
   }
   return (
     <div className="space-y-2">
@@ -2338,11 +2405,11 @@ function ChunksPanel({ chunks, hasFilter }: { chunks: ChunkRecord[]; hasFilter?:
         <Card key={chunk.id}>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="truncate text-sm font-medium">{chunk.heading || "未命名切片"}</div>
-              <Badge>排序 {chunk.rank}</Badge>
+              <div className="truncate text-sm font-medium">{chunk.heading || t("未命名切片", "Untitled chunk")}</div>
+              <Badge>{t(`排序 ${chunk.rank}`, `Rank ${chunk.rank}`)}</Badge>
             </div>
             <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{chunk.content}</p>
-            <EmbeddingPreviewBlock title="切片 Embedding" preview={chunk.embedding} />
+            <EmbeddingPreviewBlock title={t("切片 Embedding", "Chunk Embedding")} preview={chunk.embedding} />
           </CardContent>
         </Card>
       ))}
@@ -2356,10 +2423,11 @@ function EventsPanel(props: {
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
+  const { t } = useI18n();
   if (props.events.length === 0) {
     return props.hasFilter
-      ? <EmptyState title="没有匹配的事件" description="换一个标题关键字再试。" />
-      : <EmptyState title="暂无事件" description="开启抽取后，事件会显示关联实体。" />;
+      ? <EmptyState title={t("没有匹配的事件", "No matching events")} description={t("换一个标题关键字再试。", "Try another title keyword.")} />
+      : <EmptyState title={t("暂无事件", "No events yet")} description={t("开启抽取后，事件会显示关联实体。", "Events and related entities appear after extraction is enabled.")} />;
   }
   return (
     <div className="space-y-2">
@@ -2372,7 +2440,7 @@ function EventsPanel(props: {
             <p className="line-clamp-3 text-sm text-muted-foreground">{event.summary || event.content}</p>
             <div className="flex flex-wrap gap-1">
               {(event.entities ?? []).length === 0 ? (
-                <Badge>{event.entityCount ?? 0} 个实体</Badge>
+                <Badge>{t(`${event.entityCount ?? 0} 个实体`, `${event.entityCount ?? 0} entities`)}</Badge>
               ) : (event.entities ?? []).map((entity) => (
                 <button key={entity.id} onClick={() => props.onOpenEntity(entity.id)}>
                   <Badge>{entity.name}</Badge>
@@ -2380,8 +2448,8 @@ function EventsPanel(props: {
               ))}
             </div>
             <div className="grid min-w-0 gap-2">
-              <EmbeddingPreviewBlock title="标题 Embedding" preview={event.titleEmbedding} />
-              <EmbeddingPreviewBlock title="内容 Embedding" preview={event.contentEmbedding} />
+              <EmbeddingPreviewBlock title={t("标题 Embedding", "Title Embedding")} preview={event.titleEmbedding} />
+              <EmbeddingPreviewBlock title={t("内容 Embedding", "Content Embedding")} preview={event.contentEmbedding} />
             </div>
           </CardContent>
         </Card>
@@ -2395,10 +2463,11 @@ function EntitiesPanel(props: {
   hasFilter?: boolean;
   onOpenEntity: (entityId: string) => void;
 }) {
+  const { t } = useI18n();
   if (props.entities.length === 0) {
     return props.hasFilter
-      ? <EmptyState title="没有匹配的实体" description="换一个标题关键字再试。" />
-      : <EmptyState title="暂无实体" description="事件抽取后会在这里聚合实体。" />;
+      ? <EmptyState title={t("没有匹配的实体", "No matching entities")} description={t("换一个标题关键字再试。", "Try another title keyword.")} />
+      : <EmptyState title={t("暂无实体", "No entities yet")} description={t("事件抽取后会在这里聚合实体。", "Entities are aggregated here after event extraction.")} />;
   }
   return (
     <div className="space-y-2">
@@ -2409,11 +2478,11 @@ function EntitiesPanel(props: {
               <div className="truncate text-sm font-semibold">{entity.name}</div>
               <div className="text-xs text-muted-foreground">{entity.type}</div>
             </div>
-            <Badge>{entity.eventCount ?? 0} 事件</Badge>
+            <Badge>{t(`${entity.eventCount ?? 0} 事件`, `${entity.eventCount ?? 0} events`)}</Badge>
           </div>
           <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{entity.description || entity.normalizedName}</p>
           <div className="mt-2 min-w-0">
-            <EmbeddingPreviewBlock title="实体 Embedding" preview={entity.embedding} />
+            <EmbeddingPreviewBlock title={t("实体 Embedding", "Entity Embedding")} preview={entity.embedding} />
           </div>
         </button>
       ))}
@@ -2430,17 +2499,18 @@ function SearchPanel(props: {
   onSearchModeChange: (value: SearchMode) => void;
   onSearch: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/25 px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Zap className="h-4 w-4" />
-          检索模式
+          {t("检索模式", "Search mode")}
         </div>
         <div className="flex rounded-md border border-border bg-background p-0.5">
           {([
-            { value: "fast" as const, label: "极速" },
-            { value: "standard" as const, label: "标准" }
+            { value: "fast" as const, label: t("极速", "Fast") },
+            { value: "standard" as const, label: t("标准", "Standard") }
           ]).map((mode) => (
             <button
               key={mode.value}
@@ -2456,11 +2526,13 @@ function SearchPanel(props: {
           ))}
         </div>
         <div className="basis-full text-xs text-muted-foreground">
-          {props.searchMode === "fast" ? "实体全文匹配 + qwen3-rerank，不走 LLM 过滤。" : "LLM 抽取查询实体 + LLM 重排，适合对比质量。"}
+          {props.searchMode === "fast"
+            ? t("实体全文匹配 + qwen3-rerank，不走 LLM 过滤。", "Entity full-text matching + qwen3-rerank, without LLM filtering.")
+            : t("LLM 抽取查询实体 + LLM 重排，适合对比质量。", "LLM extracts query entities + LLM reranking, useful for quality comparison.")}
         </div>
       </div>
       <div className="flex gap-2">
-        <Input value={props.query} onChange={(event) => props.onQueryChange(event.target.value)} placeholder="输入检索问题" />
+        <Input value={props.query} onChange={(event) => props.onQueryChange(event.target.value)} placeholder={t("输入检索问题", "Enter a search question")} />
         <Button size="sm" onClick={props.onSearch} disabled={props.isSearching}>
           {props.isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
         </Button>
@@ -2471,17 +2543,17 @@ function SearchPanel(props: {
             <Card key={section.chunkId}>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="truncate text-sm font-medium">{section.heading || "结果切片"}</div>
+                  <div className="truncate text-sm font-medium">{section.heading || t("结果切片", "Result chunk")}</div>
                   <Badge>{section.score.toFixed(3)}</Badge>
                 </div>
                 <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{section.content}</p>
               </CardContent>
             </Card>
           ))}
-          <JsonBlock title="检索链路" value={props.result.trace ?? { traceId: props.result.traceId }} compact />
+          <JsonBlock title={t("检索链路", "Search trace")} value={props.result.trace ?? { traceId: props.result.traceId }} compact />
         </div>
       ) : (
-        <EmptyState title="还没有检索结果" description="检索范围固定为当前项目。" />
+        <EmptyState title={t("还没有检索结果", "No search results yet")} description={t("检索范围固定为当前项目。", "The search scope is fixed to the current project.")} />
       )}
     </div>
   );
@@ -2505,8 +2577,12 @@ type SettingsInput = {
 function SettingsPanel(props: {
   settings: PublicAiProviderSettings | null;
   isSaving: boolean;
+  language: SupportedLanguage;
+  languagePreference: LanguagePreference;
+  onLanguagePreferenceChange: (preference: LanguagePreference) => void;
   onSave: (input: SettingsInput) => void;
 }) {
+  const { t } = useI18n();
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
   const [embeddingModel, setEmbeddingModel] = useState("");
   const [embeddingDimensions, setEmbeddingDimensions] = useState(1024);
@@ -2536,7 +2612,7 @@ function SettingsPanel(props: {
     setDefaultSearchMode(props.settings.defaultSearchMode);
   }, [props.settings]);
 
-  if (!props.settings) return <EmptyState title="正在加载设置" description="请稍候。" />;
+  if (!props.settings) return <EmptyState title={t("正在加载设置", "Loading settings")} description={t("请稍候。", "Please wait.")} />;
 
   return (
     <form
@@ -2561,23 +2637,54 @@ function SettingsPanel(props: {
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">全局设置</h2>
-          <p className="text-xs text-muted-foreground">密钥只显示配置状态，不回显明文。</p>
+          <h2 className="text-base font-semibold">{t("全局设置", "Global settings")}</h2>
+          <p className="text-xs text-muted-foreground">{t("密钥只显示配置状态，不回显明文。", "Keys only show configuration status and are never echoed in plaintext.")}</p>
         </div>
-        <div className="text-xs text-muted-foreground">更新于 {formatDate(props.settings.updatedAt)}</div>
+        <div className="text-xs text-muted-foreground">{t("更新于", "Updated")} {formatDate(props.settings.updatedAt)}</div>
       </div>
 
+      <SettingsCard title={t("界面", "Interface")} badge={props.language === "zh" ? "中文" : "English"}>
+        <div className="space-y-3 md:col-span-2">
+          <div className="text-sm font-medium">{t("界面语言", "Interface language")}</div>
+          <div className="flex w-fit rounded-md border border-border bg-background p-0.5">
+            {([
+              { value: "auto" as const, label: t("自动", "Auto") },
+              { value: "zh" as const, label: "中文" },
+              { value: "en" as const, label: "English" }
+            ]).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={cn(
+                  "rounded px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground",
+                  props.languagePreference === option.value && "bg-foreground text-background hover:text-background"
+                )}
+                onClick={() => props.onLanguagePreferenceChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs leading-5 text-muted-foreground">
+            {t(
+              `当前显示语言：${props.language === "zh" ? "中文" : "英文"}。自动模式会根据浏览器语言选择。`,
+              `Current display language: ${props.language === "zh" ? "Chinese" : "English"}. Auto mode follows the browser language.`
+            )}
+          </div>
+        </div>
+      </SettingsCard>
+
       <SettingsCard title="AI Provider" badge="302.ai">
-        <Field label="Embedding 接口地址">
+        <Field label={t("Embedding 接口地址", "Embedding API base URL")}>
           <Input value={embeddingBaseUrl} onChange={(event) => setEmbeddingBaseUrl(event.target.value)} />
         </Field>
-        <Field label="Embedding 模型">
+        <Field label={t("Embedding 模型", "Embedding model")}>
           <Input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
         </Field>
-        <Field label="向量维度（数据库固定）">
+        <Field label={t("向量维度（数据库固定）", "Vector dimensions (database fixed)")}>
           <Input type="number" min={1024} max={1024} value={embeddingDimensions} disabled onChange={(event) => setEmbeddingDimensions(Number(event.target.value))} />
         </Field>
-        <Field label={`Embedding 密钥：${props.settings.hasEmbeddingApiKey ? "已配置" : "未配置"}`}>
+        <Field label={t(`Embedding 密钥：${props.settings.hasEmbeddingApiKey ? "已配置" : "未配置"}`, `Embedding key: ${props.settings.hasEmbeddingApiKey ? "configured" : "not configured"}`)}>
           <Input
             type="password"
             value={embeddingApiKey}
@@ -2585,22 +2692,22 @@ function SettingsPanel(props: {
               setEmbeddingApiKey(event.target.value);
               if (event.target.value.trim()) setClearEmbeddingApiKey(false);
             }}
-            placeholder="留空不修改"
+            placeholder={t("留空不修改", "Leave blank to keep unchanged")}
           />
         </Field>
-        <Field label="LLM 接口地址">
+        <Field label={t("LLM 接口地址", "LLM API base URL")}>
           <Input value={llmBaseUrl} onChange={(event) => setLlmBaseUrl(event.target.value)} />
         </Field>
-        <Field label="LLM 模型">
+        <Field label={t("LLM 模型", "LLM model")}>
           <Input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} />
         </Field>
-        <Field label="超时毫秒">
+        <Field label={t("超时毫秒", "Timeout in ms")}>
           <Input type="number" min={1} value={llmTimeoutMs} onChange={(event) => setLlmTimeoutMs(Number(event.target.value))} />
         </Field>
-        <Field label="重试次数">
+        <Field label={t("重试次数", "Retry count")}>
           <Input type="number" min={0} max={10} value={llmMaxRetries} onChange={(event) => setLlmMaxRetries(Number(event.target.value))} />
         </Field>
-        <Field label={`LLM 密钥：${props.settings.hasLlmApiKey ? "已配置" : "未配置"}`}>
+        <Field label={t(`LLM 密钥：${props.settings.hasLlmApiKey ? "已配置" : "未配置"}`, `LLM key: ${props.settings.hasLlmApiKey ? "configured" : "not configured"}`)}>
           <Input
             type="password"
             value={llmApiKey}
@@ -2608,18 +2715,18 @@ function SettingsPanel(props: {
               setLlmApiKey(event.target.value);
               if (event.target.value.trim()) setClearLlmApiKey(false);
             }}
-            placeholder="留空不修改"
+            placeholder={t("留空不修改", "Leave blank to keep unchanged")}
           />
         </Field>
       </SettingsCard>
 
-      <SettingsCard title="检索" badge={defaultSearchMode === "fast" ? "极速" : "标准"}>
+      <SettingsCard title={t("检索", "Search")} badge={defaultSearchMode === "fast" ? t("极速", "Fast") : t("标准", "Standard")}>
         <div className="space-y-3 md:col-span-2">
-          <div className="text-sm font-medium">默认检索模式</div>
+          <div className="text-sm font-medium">{t("默认检索模式", "Default search mode")}</div>
           <div className="flex w-fit rounded-md border border-border bg-background p-0.5">
             {([
-              { value: "fast" as const, label: "极速模式", description: "实体全文匹配 + qwen3-rerank，不调用 LLM 抽 key 和过滤。" },
-              { value: "standard" as const, label: "标准模式", description: "LLM 抽取查询实体 + LLM 重排，适合质量对比。" }
+              { value: "fast" as const, label: t("极速模式", "Fast mode"), description: t("实体全文匹配 + qwen3-rerank，不调用 LLM 抽 key 和过滤。", "Entity full-text matching + qwen3-rerank, without LLM key extraction or filtering.") },
+              { value: "standard" as const, label: t("标准模式", "Standard mode"), description: t("LLM 抽取查询实体 + LLM 重排，适合质量对比。", "LLM extracts query entities + LLM reranking, useful for quality comparison.") }
             ]).map((mode) => (
               <button
                 key={mode.value}
@@ -2636,13 +2743,13 @@ function SettingsPanel(props: {
           </div>
           <div className="text-xs leading-5 text-muted-foreground">
             {defaultSearchMode === "fast"
-              ? "默认使用极速链路：问题直接匹配实体库，最后用 qwen3-rerank 选 top-k。"
-              : "默认使用标准链路：先由 LLM 识别查询实体，最后由 LLM 选择候选事件。"}
+              ? t("默认使用极速链路：问题直接匹配实体库，最后用 qwen3-rerank 选 top-k。", "Default fast path: match the question directly against the entity store, then use qwen3-rerank to select top-k.")
+              : t("默认使用标准链路：先由 LLM 识别查询实体，最后由 LLM 选择候选事件。", "Default standard path: first let the LLM identify query entities, then let the LLM choose candidate events.")}
           </div>
         </div>
       </SettingsCard>
 
-      <SettingsCard title="危险操作" badge="谨慎">
+      <SettingsCard title={t("危险操作", "Danger zone")} badge={t("谨慎", "Careful")}>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
@@ -2652,7 +2759,7 @@ function SettingsPanel(props: {
               if (event.target.checked) setEmbeddingApiKey("");
             }}
           />
-          清空 Embedding 密钥
+          {t("清空 Embedding 密钥", "Clear Embedding key")}
         </label>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
@@ -2663,14 +2770,14 @@ function SettingsPanel(props: {
               if (event.target.checked) setLlmApiKey("");
             }}
           />
-          清空 LLM 密钥
+          {t("清空 LLM 密钥", "Clear LLM key")}
         </label>
       </SettingsCard>
 
       <div className="flex justify-end">
         <Button type="submit" disabled={props.isSaving}>
           {props.isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          保存设置
+          {t("保存设置", "Save settings")}
         </Button>
       </div>
     </form>
@@ -2678,10 +2785,11 @@ function SettingsPanel(props: {
 }
 
 function ProjectMcpWorkspace({ project, settings }: { project: SourceRecord | null; settings: PublicMcpSettings | null }) {
+  const { t } = useI18n();
   if (!project) {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center px-6">
-        <EmptyState title="先选择项目" description="MCP server 会绑定到当前项目，选择项目后可查看对应的接入配置和工具说明。" />
+        <EmptyState title={t("先选择项目", "Select a project first")} description={t("MCP server 会绑定到当前项目，选择项目后可查看对应的接入配置和工具说明。", "The MCP server binds to the current project. Select a project to view integration config and tool details.")} />
       </section>
     );
   }
@@ -2690,8 +2798,8 @@ function ProjectMcpWorkspace({ project, settings }: { project: SourceRecord | nu
       <div className="mx-auto grid max-w-4xl gap-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">项目 MCP</h2>
-            <p className="text-xs text-muted-foreground">当前项目 ID 会写入 MCP server 启动配置，工具调用时不再传项目参数。</p>
+            <h2 className="text-base font-semibold">{t("项目 MCP", "Project MCP")}</h2>
+            <p className="text-xs text-muted-foreground">{t("当前项目 ID 会写入 MCP server 启动配置，工具调用时不再传项目参数。", "The current project ID is written into the MCP server config, so tool calls do not pass project parameters.")}</p>
           </div>
           <Badge>{project.name}</Badge>
         </div>
@@ -2702,12 +2810,13 @@ function ProjectMcpWorkspace({ project, settings }: { project: SourceRecord | nu
 }
 
 function McpSettingsCard({ project, settings }: { project: SourceRecord; settings: PublicMcpSettings | null }) {
+  const { t } = useI18n();
   const [expandedToolName, setExpandedToolName] = useState<string | null>(null);
 
   if (!settings) {
     return (
-      <SettingsCard title="MCP" badge="加载中">
-        <div className="text-sm text-muted-foreground">正在加载 MCP 信息。</div>
+      <SettingsCard title="MCP" badge={t("加载中", "Loading")}>
+        <div className="text-sm text-muted-foreground">{t("正在加载 MCP 信息。", "Loading MCP information.")}</div>
       </SettingsCard>
     );
   }
@@ -2718,34 +2827,34 @@ function McpSettingsCard({ project, settings }: { project: SourceRecord; setting
     ? replaceMcpProjectPlaceholder(externalClientConfig.config, project.id)
     : null;
   return (
-    <SettingsCard title="MCP" badge="自动可用">
+    <SettingsCard title="MCP" badge={t("自动可用", "Auto available")}>
       <PanelInfo
-        label="当前项目"
+        label={t("当前项目", "Current project")}
         value={`${project.name} / ${project.id}`}
         multiline
       />
       <PanelInfo
-        label="项目绑定"
-        value="MCP server 启动时读取 SAG_MCP_SOURCE_ID，所有工具默认只访问这个项目。"
+        label={t("项目绑定", "Project binding")}
+        value={t("MCP server 启动时读取 SAG_MCP_SOURCE_ID，所有工具默认只访问这个项目。", "The MCP server reads SAG_MCP_SOURCE_ID at startup, and all tools access only this project by default.")}
         multiline
       />
-      <PanelInfo label="工具超时" value={`${settings.toolTimeoutMs} 毫秒`} />
+      <PanelInfo label={t("工具超时", "Tool timeout")} value={t(`${settings.toolTimeoutMs} 毫秒`, `${settings.toolTimeoutMs} ms`)} />
       {externalClientConfig && externalClientConfigValue ? (
         <div className="space-y-3 md:col-span-2">
           <div>
             <div className="text-xs font-medium text-muted-foreground">mcpServers JSON</div>
             <div className="mt-1 text-xs leading-5 text-muted-foreground">
-              复制给其他 Agent 后会直接绑定当前项目；切换项目后这里会自动换成对应项目 ID。
+              {t("复制给其他 Agent 后会直接绑定当前项目；切换项目后这里会自动换成对应项目 ID。", "Copy this to another agent to bind directly to the current project. Switching projects updates the project ID automatically.")}
             </div>
           </div>
           <CopyableCodeBlock
-            label="JSON 配置"
+            label={t("JSON 配置", "JSON config")}
             value={JSON.stringify(externalClientConfigValue, null, 2) ?? ""}
           />
         </div>
       ) : null}
       <div className="md:col-span-2">
-        <div className="mb-2 text-xs font-medium text-muted-foreground">可用工具</div>
+        <div className="mb-2 text-xs font-medium text-muted-foreground">{t("可用工具", "Available tools")}</div>
         <div className="grid gap-2">
           {settings.tools.map((tool) => (
             <McpToolCard
@@ -2785,6 +2894,7 @@ function McpToolCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className={cn("rounded-md border border-border", expanded && "border-foreground/30 bg-muted/20")}>
       <button
@@ -2798,12 +2908,12 @@ function McpToolCard({
           <div className="text-sm font-semibold">{tool.name}</div>
           <div className="mt-1 text-xs leading-5 text-muted-foreground">{tool.description}</div>
         </div>
-        <span className="shrink-0 text-xs text-muted-foreground">{expanded ? "收起" : "展开"}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{expanded ? t("收起", "Collapse") : t("展开", "Expand")}</span>
       </button>
       {expanded ? (
         <div className="space-y-3 border-t border-border p-3 pt-3">
-          <JsonBlock title="输入参数 Schema" value={tool.inputSchema} compact preserveRaw />
-          <JsonBlock title="调用示例" value={tool.example} compact preserveRaw />
+          <JsonBlock title={t("输入参数 Schema", "Input schema")} value={tool.inputSchema} compact preserveRaw />
+          <JsonBlock title={t("调用示例", "Call example")} value={tool.example} compact preserveRaw />
         </div>
       ) : null}
     </div>
@@ -2811,6 +2921,7 @@ function McpToolCard({
 }
 
 function CopyableCodeBlock({ label, value }: { label: string; value: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -2828,7 +2939,7 @@ function CopyableCodeBlock({ label, value }: { label: string; value: string }) {
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="text-xs font-medium text-muted-foreground">{label}</div>
         <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
-          {copied ? "已复制" : "复制"}
+          {copied ? t("已复制", "Copied") : t("复制", "Copy")}
         </Button>
       </div>
       <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-xs leading-5">
@@ -2844,6 +2955,7 @@ function DetailDrawer(props: {
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
+  const { t } = useI18n();
   const drawer = props.drawer;
   return (
     <div className="fixed inset-0 z-20 bg-black/20" role="presentation" onClick={props.onClose}>
@@ -2858,13 +2970,17 @@ function DetailDrawer(props: {
                 ? drawer.detail.event.title
                 : drawer.type === "entity"
                   ? drawer.detail.entity.name
-                  : `引用 ${drawer.citation.index}`}
+                  : t(`引用 ${drawer.citation.index}`, `Citation ${drawer.citation.index}`)}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {drawer.type === "event" ? "事件详情" : drawer.type === "entity" ? "实体详情" : "引用原文"}
+              {drawer.type === "event"
+                ? t("事件详情", "Event details")
+                : drawer.type === "entity"
+                  ? t("实体详情", "Entity details")
+                  : t("引用原文", "Source citation")}
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={props.onClose}>关闭</Button>
+          <Button variant="ghost" size="sm" onClick={props.onClose}>{t("关闭", "Close")}</Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin">
           {drawer.type === "event" ? (
@@ -2881,41 +2997,43 @@ function DetailDrawer(props: {
 }
 
 function EventDetailPanel({ detail, onOpenEntity }: { detail: EventDetailRecord; onOpenEntity: (entityId: string) => void }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-4">
-      <PanelInfo label="所属文档" value={detail.document?.title ?? "未知文档"} />
-      <PanelInfo label="事件内容" value={detail.event.content || detail.event.summary} multiline />
-      <PanelSection title="关联实体">
+      <PanelInfo label={t("所属文档", "Source document")} value={detail.document?.title ?? t("未知文档", "Unknown document")} />
+      <PanelInfo label={t("事件内容", "Event content")} value={detail.event.content || detail.event.summary} multiline />
+      <PanelSection title={t("关联实体", "Related entities")}>
         <div className="flex flex-wrap gap-2">
-          {detail.entities.length === 0 ? <EmptyLine text="暂无关联实体。" /> : detail.entities.map((entity) => (
+          {detail.entities.length === 0 ? <EmptyLine text={t("暂无关联实体。", "No related entities.")} /> : detail.entities.map((entity) => (
             <button key={entity.id} onClick={() => onOpenEntity(entity.id)}>
               <Badge>{entity.name}</Badge>
             </button>
           ))}
         </div>
       </PanelSection>
-      <PanelSection title="关联切片">
+      <PanelSection title={t("关联切片", "Related chunk")}>
         {detail.chunk ? (
           <Card>
             <CardContent>
-              <div className="mb-2 text-xs text-muted-foreground">{detail.chunk.heading || `排序 ${detail.chunk.rank ?? 0}`}</div>
+              <div className="mb-2 text-xs text-muted-foreground">{detail.chunk.heading || t(`排序 ${detail.chunk.rank ?? 0}`, `Rank ${detail.chunk.rank ?? 0}`)}</div>
               <p className="whitespace-pre-wrap text-sm leading-6">{detail.chunk.content}</p>
             </CardContent>
           </Card>
-        ) : <EmptyLine text="没有关联切片。" />}
+        ) : <EmptyLine text={t("没有关联切片。", "No related chunk.")} />}
       </PanelSection>
     </div>
   );
 }
 
 function EntityDetailPanel({ detail, onOpenEvent }: { detail: EntityDetailRecord; onOpenEvent: (eventId: string) => void }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-4">
-      <PanelInfo label="类型" value={detail.entity.type} />
-      <PanelInfo label="描述" value={detail.entity.description || detail.entity.normalizedName} multiline />
-      <PanelSection title={`关联事件（${detail.events.length}）`}>
+      <PanelInfo label={t("类型", "Type")} value={detail.entity.type} />
+      <PanelInfo label={t("描述", "Description")} value={detail.entity.description || detail.entity.normalizedName} multiline />
+      <PanelSection title={t(`关联事件（${detail.events.length}）`, `Related events (${detail.events.length})`)}>
         <div className="space-y-2">
-          {detail.events.length === 0 ? <EmptyLine text="暂无关联事件。" /> : detail.events.map((event) => (
+          {detail.events.length === 0 ? <EmptyLine text={t("暂无关联事件。", "No related events.")} /> : detail.events.map((event) => (
             <button key={event.id} className="w-full rounded-md border border-border p-3 text-left hover:bg-accent" onClick={() => onOpenEvent(event.id)}>
               <div className="text-sm font-medium">{event.title}</div>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{event.summary || event.content}</p>
@@ -2928,17 +3046,18 @@ function EntityDetailPanel({ detail, onOpenEvent }: { detail: EntityDetailRecord
 }
 
 function CitationDetailPanel({ citation }: { citation: AnswerCitation }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-4">
-      <PanelInfo label="切片标题" value={citation.heading || `引用 ${citation.index}`} />
+      <PanelInfo label={t("切片标题", "Chunk title")} value={citation.heading || t(`引用 ${citation.index}`, `Citation ${citation.index}`)} />
       <div className="grid grid-cols-2 gap-3">
-        <PanelInfo label="排序" value={citation.rank == null ? "-" : String(citation.rank)} />
-        <PanelInfo label="得分" value={citation.score == null ? "-" : citation.score.toFixed(4)} />
+        <PanelInfo label={t("排序", "Rank")} value={citation.rank == null ? "-" : String(citation.rank)} />
+        <PanelInfo label={t("得分", "Score")} value={citation.score == null ? "-" : citation.score.toFixed(4)} />
       </div>
-      {citation.query ? <PanelInfo label="搜索语句" value={citation.query} multiline /> : null}
-      <PanelInfo label="切片 ID" value={citation.chunkId} />
-      {citation.documentId ? <PanelInfo label="文档 ID" value={citation.documentId} /> : null}
-      <PanelSection title="原文块">
+      {citation.query ? <PanelInfo label={t("搜索语句", "Search query")} value={citation.query} multiline /> : null}
+      <PanelInfo label={t("切片 ID", "Chunk ID")} value={citation.chunkId} />
+      {citation.documentId ? <PanelInfo label={t("文档 ID", "Document ID")} value={citation.documentId} /> : null}
+      <PanelSection title={t("原文块", "Original chunk")}>
         <Card>
           <CardContent>
             <p className="whitespace-pre-wrap break-words text-sm leading-6">{citation.content}</p>
@@ -3016,18 +3135,19 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function EmbeddingPreviewBlock({ title, preview }: { title: string; preview?: EmbeddingPreview | null }) {
+  const { t } = useI18n();
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-md border border-border bg-muted/30 p-2 text-left">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{title}</span>
-        <Badge className="shrink-0">{preview ? `${preview.dimensions} 维` : "未生成"}</Badge>
+        <Badge className="shrink-0">{preview ? t(`${preview.dimensions} 维`, `${preview.dimensions} dims`) : t("未生成", "Not generated")}</Badge>
       </div>
       {preview ? (
         <code className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
           [{preview.sample.map((value) => formatEmbeddingNumber(value)).join(", ")}{preview.dimensions > preview.sample.length ? ", ..." : ""}]
         </code>
       ) : (
-        <div className="text-xs text-muted-foreground">数据库中还没有这个向量。</div>
+        <div className="text-xs text-muted-foreground">{t("数据库中还没有这个向量。", "This vector is not in the database yet.")}</div>
       )}
     </div>
   );
@@ -3301,8 +3421,9 @@ function normalizeAnswerCitation(value: unknown): AnswerCitation | null {
 }
 
 function JsonBlock({ title, value, compact, preserveRaw }: { title: string; value: unknown; compact?: boolean; preserveRaw?: boolean }) {
+  const { t } = useI18n();
   const content = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  const renderedValue = preserveRaw ? content : formatDataContent(content);
+  const renderedValue = preserveRaw ? content : formatDataContent(content, t);
   return (
     <div className="min-w-0">
       <div className="mb-1 text-xs font-medium text-muted-foreground">{title}</div>
@@ -3326,12 +3447,12 @@ function EmptyState({ title, description }: { title: string; description: string
   );
 }
 
-function resultViewLabel(view: ResultView) {
-  if (view === "overview") return "概览";
-  if (view === "chunks") return "切片";
-  if (view === "events") return "事件";
-  if (view === "entities") return "实体";
-  return "检索";
+function resultViewLabel(view: ResultView, language: SupportedLanguage) {
+  if (view === "overview") return language === "en" ? "Overview" : "概览";
+  if (view === "chunks") return language === "en" ? "Chunks" : "切片";
+  if (view === "events") return language === "en" ? "Events" : "事件";
+  if (view === "entities") return language === "en" ? "Entities" : "实体";
+  return language === "en" ? "Search" : "检索";
 }
 
 function filterByKeyword<T>(items: T[], keyword: string, getTitle: (item: T) => string) {
@@ -3348,9 +3469,9 @@ function normalizeKeyword(value: string) {
   return value.normalize("NFKC").trim().toLocaleLowerCase();
 }
 
-function contextPanelModeLabel(mode: ContextPanelMode) {
-  if (mode === "process") return "搜索过程";
-  return "原始日志";
+function contextPanelModeLabel(mode: ContextPanelMode, t: (zh: string, en: string) => string) {
+  if (mode === "process") return t("搜索过程", "Search trace");
+  return t("原始日志", "Raw logs");
 }
 
 function loadStoredModelLogs(): ModelCallLogRecord[] {
@@ -3396,30 +3517,30 @@ function persistModelLogs(logs: ModelCallLogRecord[]) {
   }
 }
 
-function uploadStatusLabel(status: UploadJobRecord["status"]) {
-  if (status === "QUEUED") return "排队中";
-  if (status === "RUNNING") return "处理中";
-  if (status === "COMPLETED") return "完成";
-  return "失败";
+function uploadStatusLabel(status: UploadJobRecord["status"], t: (zh: string, en: string) => string) {
+  if (status === "QUEUED") return t("排队中", "Queued");
+  if (status === "RUNNING") return t("处理中", "Processing");
+  if (status === "COMPLETED") return t("完成", "Completed");
+  return t("失败", "Failed");
 }
 
-function uploadStageLabel(stage: UploadJobRecord["stage"]) {
-  if (stage === "QUEUED") return "排队";
-  if (stage === "READING") return "读取文件";
-  if (stage === "PARSING") return "解析文档";
-  if (stage === "CHUNKING") return "生成切片";
-  if (stage === "EMBEDDING_CHUNKS") return "切片向量化";
-  if (stage === "EXTRACTING_EVENTS") return "抽取事件";
-  if (stage === "EMBEDDING_EVENTS") return "事件与实体向量化";
-  if (stage === "WRITING_GRAPH") return "写入图谱";
-  if (stage === "COMPLETED") return "处理完成";
-  return "处理失败";
+function uploadStageLabel(stage: UploadJobRecord["stage"], t: (zh: string, en: string) => string) {
+  if (stage === "QUEUED") return t("排队", "Queued");
+  if (stage === "READING") return t("读取文件", "Reading file");
+  if (stage === "PARSING") return t("解析文档", "Parsing document");
+  if (stage === "CHUNKING") return t("生成切片", "Generating chunks");
+  if (stage === "EMBEDDING_CHUNKS") return t("切片向量化", "Embedding chunks");
+  if (stage === "EXTRACTING_EVENTS") return t("抽取事件", "Extracting events");
+  if (stage === "EMBEDDING_EVENTS") return t("事件与实体向量化", "Embedding events and entities");
+  if (stage === "WRITING_GRAPH") return t("写入图谱", "Writing graph");
+  if (stage === "COMPLETED") return t("处理完成", "Completed");
+  return t("处理失败", "Failed");
 }
 
-function processStatusLabel(status: ProcessStepStatus) {
-  if (status === "running") return "运行中";
-  if (status === "failed") return "失败";
-  return "完成";
+function processStatusLabel(status: ProcessStepStatus, t: (zh: string, en: string) => string) {
+  if (status === "running") return t("运行中", "Running");
+  if (status === "failed") return t("失败", "Failed");
+  return t("完成", "Done");
 }
 
 function processStatusClassName(status: ProcessStepStatus) {
@@ -3433,20 +3554,24 @@ function makeStepId(prefix: string) {
   return `${prefix}-${randomId}`;
 }
 
-function buildSearchProcessSteps(result: SearchResult): ProcessStep[] {
+function buildSearchProcessSteps(result: SearchResult, language: SupportedLanguage): ProcessStep[] {
   const trace = result.trace ?? { traceId: result.traceId };
+  const t = (zh: string, en: string) => language === "en" ? en : zh;
   return [
     {
       id: makeStepId("search-start"),
-      title: "开始检索",
-      detail: `查询：${searchTraceText(trace, "query") ?? "当前问题"}；模式：${searchModeLabel(searchTraceText(trace, "searchMode"))}`,
+      title: t("开始检索", "Start search"),
+      detail: t(
+        `查询：${searchTraceText(trace, "query") ?? "当前问题"}；模式：${searchModeLabel(searchTraceText(trace, "searchMode"), language)}`,
+        `Query: ${searchTraceText(trace, "query") ?? "current question"}; mode: ${searchModeLabel(searchTraceText(trace, "searchMode"), language)}`
+      ),
       status: "done"
     },
-    ...buildTraceProcessSteps(trace, "检索链路"),
+    ...buildTraceProcessSteps(trace, t("检索链路", "Search trace"), language),
     {
       id: makeStepId("search-result"),
-      title: "生成结果",
-      detail: `返回 ${result.sections.length} 个切片结果`,
+      title: t("生成结果", "Generate results"),
+      detail: t(`返回 ${result.sections.length} 个切片结果`, `${result.sections.length} chunk result(s) returned`),
       status: "done",
       payload: {
         traceId: result.traceId,
@@ -3461,7 +3586,8 @@ function buildSearchProcessSteps(result: SearchResult): ProcessStep[] {
   ];
 }
 
-function buildTraceProcessSteps(trace: unknown, groupTitle: string): ProcessStep[] {
+function buildTraceProcessSteps(trace: unknown, groupTitle: string, language: SupportedLanguage): ProcessStep[] {
+  const t = (zh: string, en: string) => language === "en" ? en : zh;
   const record = isPlainRecord(trace) ? trace : {};
   const timings = isPlainRecord(record.timings) ? record.timings : {};
   const orderedSteps: Array<{
@@ -3472,73 +3598,73 @@ function buildTraceProcessSteps(trace: unknown, groupTitle: string): ProcessStep
   }> = [
     {
       key: "queryEmbedding",
-      title: "查询向量化",
-      detail: "把用户问题转成向量，用于召回相关事件和切片。"
+      title: t("查询向量化", "Query embedding"),
+      detail: t("把用户问题转成向量，用于召回相关事件和切片。", "Convert the user question into a vector for recalling related events and chunks.")
     },
     {
       key: "step1Bm25Entities",
-      title: "BM25 匹配查询实体",
-      detail: countSummary(record.recalledEntities, "个实体"),
+      title: t("BM25 匹配查询实体", "BM25 match query entities"),
+      detail: countSummary(record.recalledEntities, t("个实体", "entities"), language),
       payload: record.recalledEntities
     },
     {
       key: "step1ExtractEntities",
-      title: "抽取查询实体",
-      detail: entitySummary(record.queryEntities),
+      title: t("抽取查询实体", "Extract query entities"),
+      detail: entitySummary(record.queryEntities, language),
       payload: record.queryEntities
     },
     {
       key: "step2RetrieveEntities",
-      title: "召回相关实体",
-      detail: countSummary(record.recalledEntities, "个实体"),
+      title: t("召回相关实体", "Retrieve related entities"),
+      detail: countSummary(record.recalledEntities, t("个实体", "entities"), language),
       payload: record.recalledEntities
     },
     {
       key: "step3EntityEvents",
-      title: "实体关联事件",
-      detail: countSummary(record.entityEvents ?? record.entityEventIds, "个事件"),
+      title: t("实体关联事件", "Entity-linked events"),
+      detail: countSummary(record.entityEvents ?? record.entityEventIds, t("个事件", "events"), language),
       payload: eventPayload(record, "entityEvents", "entityEventIds")
     },
     {
       key: "step3QueryEvents",
-      title: "标题向量召回事件",
-      detail: countSummary(record.queryEvents ?? record.queryEventIds, "个事件"),
+      title: t("标题向量召回事件", "Title-vector event recall"),
+      detail: countSummary(record.queryEvents ?? record.queryEventIds, t("个事件", "events"), language),
       payload: eventPayload(record, "queryEvents", "queryEventIds")
     },
     {
       key: "step4FetchDetails",
-      title: "读取候选事件详情",
-      detail: countSummary(record.eventSnapshots, "个候选事件"),
+      title: t("读取候选事件详情", "Fetch candidate event details"),
+      detail: countSummary(record.eventSnapshots, t("个候选事件", "candidate events"), language),
       payload: record.eventSnapshots
     },
     {
       key: "step5Expand",
-      title: "事件扩展",
-      detail: countSummary(record.expandedEvents ?? record.expandedEventIds, "个事件"),
+      title: t("事件扩展", "Event expansion"),
+      detail: countSummary(record.expandedEvents ?? record.expandedEventIds, t("个事件", "events"), language),
       payload: eventPayload(record, "expandedEvents", "expandedEventIds")
     },
     {
       key: "step6CoarseRank",
-      title: "粗排事件",
-      detail: countSummary(record.coarseRankedEvents ?? record.coarseRankedEventIds, "个候选"),
+      title: t("粗排事件", "Coarse-rank events"),
+      detail: countSummary(record.coarseRankedEvents ?? record.coarseRankedEventIds, t("个候选", "candidates"), language),
       payload: eventPayload(record, "coarseRankedEvents", "coarseRankedEventIds")
     },
     {
       key: "step7LlmRerank",
-      title: "LLM 重排",
-      detail: countSummary(record.rerankedEvents ?? record.rerankedEventIds, "个候选"),
+      title: t("LLM 重排", "LLM rerank"),
+      detail: countSummary(record.rerankedEvents ?? record.rerankedEventIds, t("个候选", "candidates"), language),
       payload: eventPayload(record, "rerankedEvents", "rerankedEventIds")
     },
     {
       key: "step7RerankModel",
-      title: "Rerank 模型重排",
-      detail: countSummary(record.rerankedEvents ?? record.rerankedEventIds, "个候选"),
+      title: t("Rerank 模型重排", "Rerank model rerank"),
+      detail: countSummary(record.rerankedEvents ?? record.rerankedEventIds, t("个候选", "candidates"), language),
       payload: eventPayload(record, "rerankedEvents", "rerankedEventIds")
     },
     {
       key: "step8FetchChunks",
-      title: "回取关联切片",
-      detail: "读取最终事件关联的原文切片，作为回答上下文。"
+      title: t("回取关联切片", "Fetch related chunks"),
+      detail: t("读取最终事件关联的原文切片，作为回答上下文。", "Fetch original chunks linked to the final events as answer context.")
     }
   ];
 
@@ -3557,7 +3683,7 @@ function buildTraceProcessSteps(trace: unknown, groupTitle: string): ProcessStep
   if (fallbackReason) {
     steps.push({
       id: makeStepId("fallback"),
-      title: "降级路径",
+      title: t("降级路径", "Fallback path"),
       detail: fallbackReason,
       status: "done"
     });
@@ -3567,7 +3693,7 @@ function buildTraceProcessSteps(trace: unknown, groupTitle: string): ProcessStep
     steps.push({
       id: makeStepId("trace"),
       title: groupTitle,
-      detail: "工具返回了链路数据，但没有包含可拆解的阶段字段。",
+      detail: t("工具返回了链路数据，但没有包含可拆解的阶段字段。", "The tool returned trace data but did not include decomposable stage fields."),
       status: "done",
       payload: trace
     });
@@ -3576,19 +3702,19 @@ function buildTraceProcessSteps(trace: unknown, groupTitle: string): ProcessStep
   return steps;
 }
 
-function buildToolProcessPayload(toolCall: McpToolCallRecord) {
+function buildToolProcessPayload(toolCall: McpToolCallRecord, language: SupportedLanguage) {
   return {
-    参数: toolCall.arguments,
-    结果: parseToolResponse(toolCall.result),
-    错误: toolCall.error ?? undefined
+    [language === "en" ? "arguments" : "参数"]: toolCall.arguments,
+    [language === "en" ? "result" : "结果"]: parseToolResponse(toolCall.result),
+    [language === "en" ? "error" : "错误"]: toolCall.error ?? undefined
   };
 }
 
-function buildRunningMcpSearch(toolName: string, args: Record<string, unknown>): RunningMcpSearch {
+function buildRunningMcpSearch(toolName: string, args: Record<string, unknown>, language: SupportedLanguage): RunningMcpSearch {
   const query = typeof args.query === "string" && args.query.trim()
     ? args.query.trim()
-    : `${toolName} 未提供 query 参数`;
-  const searchMode = typeof args.searchMode === "string" ? searchModeLabel(args.searchMode) : undefined;
+    : language === "en" ? `${toolName} did not provide a query argument` : `${toolName} 未提供 query 参数`;
+  const searchMode = typeof args.searchMode === "string" ? searchModeLabel(args.searchMode, language) : undefined;
   return {
     id: makeStepId("running-mcp-search"),
     toolName,
@@ -3597,18 +3723,22 @@ function buildRunningMcpSearch(toolName: string, args: Record<string, unknown>):
   };
 }
 
-function getMcpSearchQuery(args: Record<string, unknown>) {
+function getMcpSearchQuery(args: Record<string, unknown>, language: SupportedLanguage) {
   const query = typeof args.query === "string" ? args.query.trim() : "";
-  const mode = typeof args.searchMode === "string" ? `；模式：${searchModeLabel(args.searchMode)}` : "";
-  return query ? `query: ${query}${mode}` : "MCP 调用了 sag_search，但参数里没有 query 字段。";
+  const mode = typeof args.searchMode === "string"
+    ? language === "en" ? `; mode: ${searchModeLabel(args.searchMode, language)}` : `；模式：${searchModeLabel(args.searchMode, language)}`
+    : "";
+  return query
+    ? `query: ${query}${mode}`
+    : language === "en" ? "MCP called sag_search, but the arguments did not include a query field." : "MCP 调用了 sag_search，但参数里没有 query 字段。";
 }
 
-function buildMcpSearchQueryStep(toolCall: McpToolCallRecord): ProcessStep {
+function buildMcpSearchQueryStep(toolCall: McpToolCallRecord, language: SupportedLanguage): ProcessStep {
   const query = typeof toolCall.arguments.query === "string" ? toolCall.arguments.query : "";
   return {
     id: makeStepId("mcp-search-query"),
-    title: "MCP 搜索语句",
-    detail: getMcpSearchQuery(toolCall.arguments),
+    title: language === "en" ? "MCP search query" : "MCP 搜索语句",
+    detail: getMcpSearchQuery(toolCall.arguments, language),
     status: "done",
     durationMs: toolCall.durationMs,
     payload: {
@@ -3622,14 +3752,14 @@ function buildMcpSearchQueryStep(toolCall: McpToolCallRecord): ProcessStep {
   };
 }
 
-function buildMcpSearchResultSteps(result: unknown): ProcessStep[] {
+function buildMcpSearchResultSteps(result: unknown, language: SupportedLanguage): ProcessStep[] {
   if (!isPlainRecord(result) || !Array.isArray(result.sections)) {
     return [];
   }
   return [{
     id: makeStepId("mcp-search-result"),
-    title: "SAG 返回切片",
-    detail: `返回 ${result.sections.length} 个切片结果`,
+    title: language === "en" ? "SAG returned chunks" : "SAG 返回切片",
+    detail: language === "en" ? `${result.sections.length} chunk result(s) returned` : `返回 ${result.sections.length} 个切片结果`,
     status: "done",
     payload: {
       traceId: result.traceId,
@@ -3681,22 +3811,23 @@ function searchTraceText(record: unknown, key: string) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function searchModeLabel(value: string | null) {
-  if (value === "fast") return "极速";
-  if (value === "standard") return "标准";
-  return "默认";
+function searchModeLabel(value: string | null, language: SupportedLanguage) {
+  if (value === "fast") return language === "en" ? "Fast" : "极速";
+  if (value === "standard") return language === "en" ? "Standard" : "标准";
+  return language === "en" ? "Default" : "默认";
 }
 
-function entitySummary(value: unknown) {
+function entitySummary(value: unknown, language: SupportedLanguage) {
   if (Array.isArray(value)) {
-    return value.length === 0 ? "没有识别到查询实体" : `识别到 ${value.length} 个查询实体`;
+    if (value.length === 0) return language === "en" ? "No query entities identified" : "没有识别到查询实体";
+    return language === "en" ? `${value.length} query entity/entities identified` : `识别到 ${value.length} 个查询实体`;
   }
-  return "识别用户问题中的关键实体";
+  return language === "en" ? "Identify key entities in the user question" : "识别用户问题中的关键实体";
 }
 
-function countSummary(value: unknown, unit: string) {
+function countSummary(value: unknown, unit: string, language: SupportedLanguage) {
   if (Array.isArray(value)) return `${value.length} ${unit}`;
-  return "等待上一步结果";
+  return language === "en" ? "Waiting for the previous step" : "等待上一步结果";
 }
 
 function eventPayload(record: Record<string, unknown>, eventKey: string, idKey: string) {
@@ -3737,54 +3868,76 @@ function isAbortError(error: unknown) {
     (error instanceof Error && error.name === "AbortError");
 }
 
-function formatModelName(model?: string | null) {
-  if (!model) return "未知模型";
-  if (model === "local-rule-fallback") return "本地规则回退";
+function formatModelName(model: string | null | undefined, t: (zh: string, en: string) => string) {
+  if (!model) return t("未知模型", "Unknown model");
+  if (model === "local-rule-fallback") return t("本地规则回退", "Local rule fallback");
   return model;
 }
 
-function formatMessageRole(role: string) {
-  if (role === "user") return "用户";
-  if (role === "assistant") return "助手";
-  if (role === "tool") return "工具";
-  return "系统";
+function formatMessageRole(role: string, t: (zh: string, en: string) => string) {
+  if (role === "user") return t("用户", "User");
+  if (role === "assistant") return t("助手", "Assistant");
+  if (role === "tool") return t("工具", "Tool");
+  return t("系统", "System");
 }
 
-function formatToolStatus(status: "PENDING" | "SUCCEEDED" | "FAILED") {
-  if (status === "SUCCEEDED") return "成功";
-  if (status === "FAILED") return "失败";
-  return "等待中";
+function formatToolStatus(status: "PENDING" | "SUCCEEDED" | "FAILED", t: (zh: string, en: string) => string) {
+  if (status === "SUCCEEDED") return t("成功", "Succeeded");
+  if (status === "FAILED") return t("失败", "Failed");
+  return t("等待中", "Pending");
 }
 
 function formatEmbeddingNumber(value: number) {
   return Number.isFinite(value) ? value.toFixed(5) : "0.00000";
 }
 
-function formatMessageContent(content: string) {
-  return formatDataContent(content)
-    .replaceAll("sources", "项目")
-    .replaceAll("source", "项目")
-    .replaceAll("Sources", "项目")
-    .replaceAll("Source", "项目")
-    .replaceAll("来源", "项目")
-    .replaceAll("trace", "检索链路")
-    .replaceAll("Mock LLM planner completed MCP tool calls.", "模拟 LLM 规划器已完成 MCP 工具调用。")
-    .replace("当前未配置 LLM_API_KEY，已使用有限 fallback 通过真实 MCP client 测试工具。", "当前未配置 LLM 密钥，已使用有限本地规则回退，并通过真实 MCP 客户端测试工具。")
-    .replace("当前 fallback 支持列出 sources、检索 search、查询 event。请尝试：列出 sources，并搜索 SAG multi search。", "当前本地规则回退支持列出项目、执行检索、查询事件。请尝试：列出项目，并搜索 SAG 多路检索。")
-    .replace("已通过 MCP 调用 sag_search，并返回检索结果和 trace。", "已通过 MCP 调用 sag_search，并返回检索结果和检索链路。");
+function formatMessageContent(content: string, t: (zh: string, en: string) => string) {
+  return formatDataContent(content, t)
+    .replaceAll("sources", t("项目", "projects"))
+    .replaceAll("source", t("项目", "project"))
+    .replaceAll("Sources", t("项目", "Projects"))
+    .replaceAll("Source", t("项目", "Project"))
+    .replaceAll("来源", t("项目", "project"))
+    .replaceAll("trace", t("检索链路", "trace"))
+    .replaceAll(
+      "Mock LLM planner completed MCP tool calls.",
+      t("模拟 LLM 规划器已完成 MCP 工具调用。", "Mock LLM planner completed MCP tool calls.")
+    )
+    .replace(
+      "当前未配置 LLM_API_KEY，已使用有限 fallback 通过真实 MCP client 测试工具。",
+      t(
+        "当前未配置 LLM 密钥，已使用有限本地规则回退，并通过真实 MCP 客户端测试工具。",
+        "LLM key is not configured. A limited local rule fallback was used to test tools through the real MCP client."
+      )
+    )
+    .replace(
+      "当前 fallback 支持列出 sources、检索 search、查询 event。请尝试：列出 sources，并搜索 SAG multi search。",
+      t(
+        "当前本地规则回退支持列出项目、执行检索、查询事件。请尝试：列出项目，并搜索 SAG 多路检索。",
+        "The local fallback supports listing projects, searching, and querying events. Try listing projects and searching SAG multi-search."
+      )
+    )
+    .replace(
+      "已通过 MCP 调用 sag_search，并返回检索结果和 trace。",
+      t("已通过 MCP 调用 sag_search，并返回检索结果和检索链路。", "Called sag_search through MCP and returned retrieval results and trace.")
+    );
 }
 
-function formatDataContent(content: string) {
+function formatDataContent(content: string, t: (zh: string, en: string) => string) {
+  const project = t("项目", "project");
+  const projectList = t("项目列表", "project list");
+  const projectIds = t("项目ID列表", "project ID list");
+  const projectId = t("项目ID", "project ID");
   return content
-    .replaceAll("sourceIds", "项目ID列表")
-    .replaceAll("sourceId", "项目ID")
-    .replaceAll("source_id", "项目ID")
-    .replaceAll("sources", "项目列表")
-    .replaceAll("source", "项目")
-    .replaceAll("Sources", "项目列表")
-    .replaceAll("Source", "项目")
-    .replaceAll("projects", "项目列表")
-    .replaceAll("projectIds", "项目ID列表")
-    .replaceAll("projectId", "项目ID")
-    .replaceAll("来源", "项目");
+    .replaceAll("sourceIds", projectIds)
+    .replaceAll("sourceId", projectId)
+    .replaceAll("source_id", projectId)
+    .replaceAll("sources", projectList)
+    .replaceAll("source", project)
+    .replaceAll("Sources", projectList)
+    .replaceAll("Source", project)
+    .replaceAll("projects", projectList)
+    .replaceAll("projectIds", projectIds)
+    .replaceAll("projectId", projectId)
+    .replaceAll("来源", project);
 }

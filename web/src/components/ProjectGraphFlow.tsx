@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import type { SupportedLanguage } from "../i18n";
 
 type GraphNodeData = {
   label: string;
@@ -54,6 +55,7 @@ type GraphPosition = {
 
 export function ProjectGraphFlow(props: {
   graph: ProjectGraphRecord;
+  language: SupportedLanguage;
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
@@ -66,6 +68,7 @@ export function ProjectGraphFlow(props: {
 
 function ProjectGraphCanvas(props: {
   graph: ProjectGraphRecord;
+  language: SupportedLanguage;
   onOpenEvent: (eventId: string) => void;
   onOpenEntity: (entityId: string) => void;
 }) {
@@ -268,11 +271,11 @@ function ProjectGraphCanvas(props: {
   return (
     <div className="relative h-full min-h-0 overflow-hidden rounded-lg border border-border bg-background">
       <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/95 p-2 shadow-sm">
-        <MetricChip label="实体" value={props.graph.entities.length} />
-        <MetricChip label="事件" value={props.graph.events.length} />
-        <MetricChip label="关系" value={props.graph.edges.length} />
-        <Button type="button" variant="outline" size="sm" onClick={resetGraph}>重置</Button>
-        <Button type="button" variant="outline" size="sm" onClick={expandAll}>展开全部</Button>
+        <MetricChip label={graphText(props.language, "实体", "Entities")} value={props.graph.entities.length} />
+        <MetricChip label={graphText(props.language, "事件", "Events")} value={props.graph.events.length} />
+        <MetricChip label={graphText(props.language, "关系", "Relations")} value={props.graph.edges.length} />
+        <Button type="button" variant="outline" size="sm" onClick={resetGraph}>{graphText(props.language, "重置", "Reset")}</Button>
+        <Button type="button" variant="outline" size="sm" onClick={expandAll}>{graphText(props.language, "展开全部", "Expand all")}</Button>
       </div>
       <ReactFlow<GraphNode, GraphEdge>
         nodes={nodes}
@@ -302,6 +305,10 @@ function ProjectGraphCanvas(props: {
       </ReactFlow>
     </div>
   );
+}
+
+function graphText(language: SupportedLanguage, zh: string, en: string) {
+  return language === "en" ? en : zh;
 }
 
 function buildVisibleGraph(input: {
