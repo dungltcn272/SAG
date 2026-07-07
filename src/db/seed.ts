@@ -1,5 +1,6 @@
 import { pool, closePool } from "./pool.js";
 import { logger } from "../observability/logger.js";
+import { pathToFileURL } from "node:url";
 
 export const defaultEntityTypes = [
   {
@@ -124,7 +125,7 @@ export async function seed(): Promise<void> {
   logger.info({ count: defaultEntityTypes.length }, "seed complete");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   seed()
     .then(async () => closePool())
     .catch(async (error: unknown) => {

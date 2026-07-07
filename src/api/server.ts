@@ -17,6 +17,7 @@ import { listModelCallLogs } from "../observability/model-call-log.js";
 const rootDir = process.cwd();
 const webDistDir = path.join(rootDir, "web", "dist");
 const webIndexFile = path.join(webDistDir, "index.html");
+let runningHttpServer: ReturnType<typeof buildHttpServer> | null = null;
 
 const ingestSchema = z.object({
   sourceId: z.string().uuid().optional(),
@@ -201,7 +202,7 @@ export function buildHttpServer() {
       return reply.code(400).send({
         error: {
           code: "PERMANENT_CONFIRMATION_REQUIRED",
-          message: "永久删除项目必须显式传入 permanent=true"
+          message: "Muốn xóa vĩnh viễn project phải truyền rõ permanent=true"
         }
       });
     }
@@ -263,7 +264,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.jobId);
     const job = webuiService.getUploadJob(params.jobId);
     if (!job) {
-      return reply.code(404).send(notFound("UPLOAD_JOB_NOT_FOUND", "上传任务不存在"));
+      return reply.code(404).send(notFound("UPLOAD_JOB_NOT_FOUND", "Không tìm thấy tác vụ tải lên"));
     }
     return { job };
   });
@@ -273,7 +274,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.documentId);
     const document = await webuiService.getDocument(params.documentId);
     if (!document) {
-      return reply.code(404).send(notFound("DOCUMENT_NOT_FOUND", "文档不存在"));
+      return reply.code(404).send(notFound("DOCUMENT_NOT_FOUND", "Không tìm thấy tài liệu"));
     }
     return { document };
   });
@@ -311,7 +312,7 @@ export function buildHttpServer() {
       return reply.code(400).send({
         error: {
           code: "PERMANENT_CONFIRMATION_REQUIRED",
-          message: "永久删除文档必须显式传入 permanent=true"
+          message: "Muốn xóa vĩnh viễn tài liệu phải truyền rõ permanent=true"
         }
       });
     }
@@ -415,7 +416,7 @@ export function buildHttpServer() {
       return reply.code(404).send({
         error: {
           code: "EVENT_NOT_FOUND",
-          message: "事件不存在"
+          message: "Không tìm thấy event"
         }
       });
     }
@@ -427,7 +428,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.eventId);
     const event = await webuiService.getEvent(params.eventId);
     if (!event) {
-      return reply.code(404).send(notFound("EVENT_NOT_FOUND", "事件不存在"));
+      return reply.code(404).send(notFound("EVENT_NOT_FOUND", "Không tìm thấy event"));
     }
     return event;
   });
@@ -437,7 +438,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.entityId);
     const entity = await webuiService.getEntity(params.entityId);
     if (!entity) {
-      return reply.code(404).send(notFound("ENTITY_NOT_FOUND", "实体不存在"));
+      return reply.code(404).send(notFound("ENTITY_NOT_FOUND", "Không tìm thấy entity"));
     }
     return entity;
   });
@@ -465,7 +466,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.sessionId);
     const detail = await mcpAgentService.getSession(params.sessionId);
     if (!detail) {
-      return reply.code(404).send(notFound("MCP_SESSION_NOT_FOUND", "MCP 会话不存在"));
+      return reply.code(404).send(notFound("MCP_SESSION_NOT_FOUND", "Không tìm thấy phiên MCP"));
     }
     return detail;
   });
@@ -475,7 +476,7 @@ export function buildHttpServer() {
     z.string().uuid().parse(params.sessionId);
     const detail = await mcpAgentService.clearSession(params.sessionId);
     if (!detail) {
-      return reply.code(404).send(notFound("MCP_SESSION_NOT_FOUND", "MCP 会话不存在"));
+      return reply.code(404).send(notFound("MCP_SESSION_NOT_FOUND", "Không tìm thấy phiên MCP"));
     }
     return detail;
   });
@@ -557,7 +558,7 @@ export function buildHttpServer() {
     });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith("/api/") || request.url === "/health") {
-        return reply.code(404).send(notFound("NOT_FOUND", "接口不存在"));
+        return reply.code(404).send(notFound("NOT_FOUND", "Không tìm thấy API"));
       }
       return reply.type("text/html").send(fs.readFileSync(webIndexFile, "utf8"));
     });
@@ -593,7 +594,7 @@ function notFound(code: string, message: string) {
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof z.ZodError) {
-    return "请求参数无效";
+    return "Tham số request không hợp lệ";
   }
   return error instanceof Error ? error.message : String(error);
 }
@@ -604,6 +605,7 @@ function isAbortError(error: unknown): boolean {
 
 export async function startHttpServer(): Promise<void> {
   const app = buildHttpServer();
+  runningHttpServer = app;
   await app.listen({
     host: config.HTTP_HOST,
     port: config.HTTP_PORT

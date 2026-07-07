@@ -1,4 +1,4 @@
-const DEFAULT_SESSION_TITLE = "新对话";
+const DEFAULT_SESSION_TITLE = "Hội thoại mới";
 const MAX_CHINESE_TITLE_LENGTH = 18;
 const MAX_ENGLISH_TITLE_WORDS = 8;
 

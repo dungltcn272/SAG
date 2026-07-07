@@ -21,7 +21,7 @@ import type {
 } from "../types";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
-import type { SupportedLanguage } from "../i18n";
+import { translate, type SupportedLanguage } from "../i18n";
 
 type GraphNodeData = {
   label: string;
@@ -308,7 +308,7 @@ function ProjectGraphCanvas(props: {
 }
 
 function graphText(language: SupportedLanguage, zh: string, en: string) {
-  return language === "en" ? en : zh;
+  return translate(language, zh, en);
 }
 
 function buildVisibleGraph(input: {

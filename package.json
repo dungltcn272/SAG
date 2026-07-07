@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch src/index.ts",
+    "dev:api": "tsx src/index.ts",
     "dev:web": "vite --host 0.0.0.0",
     "start": "node dist/src/index.js",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",

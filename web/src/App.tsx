@@ -53,7 +53,7 @@ import { Card, CardContent, CardHeader } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { ProjectGraphFlow } from "./components/ProjectGraphFlow";
-import { I18nProvider, useI18n, useLanguageController, type LanguagePreference, type SupportedLanguage } from "./i18n";
+import { I18nProvider, translate, useI18n, useLanguageController, type LanguagePreference, type SupportedLanguage } from "./i18n";
 
 type WorkspaceView = "chat" | "documents" | "graph" | "mcp" | "settings";
 type ResultView = "overview" | "chunks" | "events" | "entities" | "search";
@@ -2753,14 +2753,15 @@ function SettingsPanel(props: {
         <div className="text-xs text-muted-foreground">{t("更新于", "Updated")} {formatDate(props.settings.updatedAt)}</div>
       </div>
 
-      <SettingsCard title={t("界面", "Interface")} badge={props.language === "zh" ? "中文" : "English"}>
+      <SettingsCard title={t("界面", "Interface")} badge={languageLabel(props.language)}>
         <div className="space-y-3 md:col-span-2">
           <div className="text-sm font-medium">{t("界面语言", "Interface language")}</div>
           <div className="flex w-fit rounded-md border border-border bg-background p-0.5">
             {([
               { value: "auto" as const, label: t("自动", "Auto") },
               { value: "zh" as const, label: "中文" },
-              { value: "en" as const, label: "English" }
+              { value: "en" as const, label: "English" },
+              { value: "vi" as const, label: "Tiếng Việt" }
             ]).map((option) => (
               <button
                 key={option.value}
@@ -2778,7 +2779,8 @@ function SettingsPanel(props: {
           <div className="text-xs leading-5 text-muted-foreground">
             {t(
               `当前显示语言：${props.language === "zh" ? "中文" : "英文"}。自动模式会根据浏览器语言选择。`,
-              `Current display language: ${props.language === "zh" ? "Chinese" : "English"}. Auto mode follows the browser language.`
+              `Current display language: ${languageLabel(props.language)}. Auto mode follows the browser language.`,
+              `Ngôn ngữ hiển thị hiện tại: ${languageLabel(props.language)}. Chế độ tự động theo ngôn ngữ trình duyệt.`
             )}
           </div>
         </div>
@@ -3611,11 +3613,17 @@ function EmptyState({ title, description }: { title: string; description: string
 }
 
 function resultViewLabel(view: ResultView, language: SupportedLanguage) {
-  if (view === "overview") return language === "en" ? "Overview" : "概览";
-  if (view === "chunks") return language === "en" ? "Chunks" : "切片";
-  if (view === "events") return language === "en" ? "Events" : "事件";
-  if (view === "entities") return language === "en" ? "Entities" : "实体";
-  return language === "en" ? "Search" : "检索";
+  if (view === "overview") return translate(language, "概览", "Overview", "Tổng quan");
+  if (view === "chunks") return translate(language, "切片", "Chunks", "Chunks");
+  if (view === "events") return translate(language, "事件", "Events", "Events");
+  if (view === "entities") return translate(language, "实体", "Entities", "Entities");
+  return translate(language, "检索", "Search", "Tìm kiếm");
+}
+
+function languageLabel(language: SupportedLanguage) {
+  if (language === "zh") return "中文";
+  if (language === "vi") return "Tiếng Việt";
+  return "English";
 }
 
 function filterByKeyword<T>(items: T[], keyword: string, getTitle: (item: T) => string) {
@@ -3719,7 +3727,7 @@ function makeStepId(prefix: string) {
 
 function buildSearchProcessSteps(result: SearchResult, language: SupportedLanguage): ProcessStep[] {
   const trace = result.trace ?? { traceId: result.traceId };
-  const t = (zh: string, en: string) => language === "en" ? en : zh;
+  const t = (zh: string, en: string, vi?: string) => translate(language, zh, en, vi);
   return [
     {
       id: makeStepId("search-start"),
@@ -3750,7 +3758,7 @@ function buildSearchProcessSteps(result: SearchResult, language: SupportedLangua
 }
 
 function buildTraceProcessSteps(trace: unknown, groupTitle: string, language: SupportedLanguage): ProcessStep[] {
-  const t = (zh: string, en: string) => language === "en" ? en : zh;
+  const t = (zh: string, en: string, vi?: string) => translate(language, zh, en, vi);
   const record = isPlainRecord(trace) ? trace : {};
   const timings = isPlainRecord(record.timings) ? record.timings : {};
   const orderedSteps: Array<{
@@ -3867,16 +3875,16 @@ function buildTraceProcessSteps(trace: unknown, groupTitle: string, language: Su
 
 function buildToolProcessPayload(toolCall: McpToolCallRecord, language: SupportedLanguage) {
   return {
-    [language === "en" ? "arguments" : "参数"]: toolCall.arguments,
-    [language === "en" ? "result" : "结果"]: parseToolResponse(toolCall.result),
-    [language === "en" ? "error" : "错误"]: toolCall.error ?? undefined
+    [translate(language, "参数", "arguments", "tham số")]: toolCall.arguments,
+    [translate(language, "结果", "result", "kết quả")]: parseToolResponse(toolCall.result),
+    [translate(language, "错误", "error", "lỗi")]: toolCall.error ?? undefined
   };
 }
 
 function buildRunningMcpSearch(toolName: string, args: Record<string, unknown>, language: SupportedLanguage): RunningMcpSearch {
   const query = typeof args.query === "string" && args.query.trim()
     ? args.query.trim()
-    : language === "en" ? `${toolName} did not provide a query argument` : `${toolName} 未提供 query 参数`;
+    : translate(language, `${toolName} 未提供 query 参数`, `${toolName} did not provide a query argument`, `${toolName} không cung cấp tham số query`);
   const searchMode = typeof args.searchMode === "string" ? searchModeLabel(args.searchMode, language) : undefined;
   return {
     id: makeStepId("running-mcp-search"),
@@ -3889,18 +3897,18 @@ function buildRunningMcpSearch(toolName: string, args: Record<string, unknown>, 
 function getMcpSearchQuery(args: Record<string, unknown>, language: SupportedLanguage) {
   const query = typeof args.query === "string" ? args.query.trim() : "";
   const mode = typeof args.searchMode === "string"
-    ? language === "en" ? `; mode: ${searchModeLabel(args.searchMode, language)}` : `；模式：${searchModeLabel(args.searchMode, language)}`
+    ? translate(language, `；模式：${searchModeLabel(args.searchMode, language)}`, `; mode: ${searchModeLabel(args.searchMode, language)}`, `; chế độ: ${searchModeLabel(args.searchMode, language)}`)
     : "";
   return query
     ? `query: ${query}${mode}`
-    : language === "en" ? "MCP called sag_search, but the arguments did not include a query field." : "MCP 调用了 sag_search，但参数里没有 query 字段。";
+    : translate(language, "MCP 调用了 sag_search，但参数里没有 query 字段。", "MCP called sag_search, but the arguments did not include a query field.", "MCP đã gọi sag_search nhưng tham số không có trường query.");
 }
 
 function buildMcpSearchQueryStep(toolCall: McpToolCallRecord, language: SupportedLanguage): ProcessStep {
   const query = typeof toolCall.arguments.query === "string" ? toolCall.arguments.query : "";
   return {
     id: makeStepId("mcp-search-query"),
-    title: language === "en" ? "MCP search query" : "MCP 搜索语句",
+    title: translate(language, "MCP 搜索语句", "MCP search query", "Câu truy vấn MCP"),
     detail: getMcpSearchQuery(toolCall.arguments, language),
     status: "done",
     durationMs: toolCall.durationMs,
@@ -3921,8 +3929,8 @@ function buildMcpSearchResultSteps(result: unknown, language: SupportedLanguage)
   }
   return [{
     id: makeStepId("mcp-search-result"),
-    title: language === "en" ? "SAG returned chunks" : "SAG 返回切片",
-    detail: language === "en" ? `${result.sections.length} chunk result(s) returned` : `返回 ${result.sections.length} 个切片结果`,
+    title: translate(language, "SAG 返回切片", "SAG returned chunks", "SAG trả về chunks"),
+    detail: translate(language, `返回 ${result.sections.length} 个切片结果`, `${result.sections.length} chunk result(s) returned`, `Trả về ${result.sections.length} chunk kết quả`),
     status: "done",
     payload: {
       traceId: result.traceId,
@@ -3975,22 +3983,22 @@ function searchTraceText(record: unknown, key: string) {
 }
 
 function searchModeLabel(value: string | null, language: SupportedLanguage) {
-  if (value === "fast") return language === "en" ? "Fast" : "极速";
-  if (value === "standard") return language === "en" ? "Standard" : "标准";
-  return language === "en" ? "Default" : "默认";
+  if (value === "fast") return translate(language, "极速", "Fast", "Nhanh");
+  if (value === "standard") return translate(language, "标准", "Standard", "Chuẩn");
+  return translate(language, "默认", "Default", "Mặc định");
 }
 
 function entitySummary(value: unknown, language: SupportedLanguage) {
   if (Array.isArray(value)) {
-    if (value.length === 0) return language === "en" ? "No query entities identified" : "没有识别到查询实体";
-    return language === "en" ? `${value.length} query entity/entities identified` : `识别到 ${value.length} 个查询实体`;
+    if (value.length === 0) return translate(language, "没有识别到查询实体", "No query entities identified", "Không nhận diện được query entity");
+    return translate(language, `识别到 ${value.length} 个查询实体`, `${value.length} query entity/entities identified`, `Nhận diện được ${value.length} query entity`);
   }
-  return language === "en" ? "Identify key entities in the user question" : "识别用户问题中的关键实体";
+  return translate(language, "识别用户问题中的关键实体", "Identify key entities in the user question", "Nhận diện entity quan trọng trong câu hỏi");
 }
 
 function countSummary(value: unknown, unit: string, language: SupportedLanguage) {
   if (Array.isArray(value)) return `${value.length} ${unit}`;
-  return language === "en" ? "Waiting for the previous step" : "等待上一步结果";
+  return translate(language, "等待上一步结果", "Waiting for the previous step", "Đang chờ bước trước");
 }
 
 function eventPayload(record: Record<string, unknown>, eventKey: string, idKey: string) {
@@ -4056,6 +4064,22 @@ function formatEmbeddingNumber(value: number) {
 
 function formatMessageContent(content: string, t: (zh: string, en: string) => string) {
   return formatDataContent(content, t)
+    .replace(
+      "当前未配置 LLM_API_KEY，已使用有限本地规则回退，并通过真实 MCP 客户端测试工具。",
+      "Chưa cấu hình LLM_API_KEY, nên hệ thống đang dùng luật nội bộ đơn giản để gọi thử MCP tool."
+    )
+    .replace(
+      "当前本地规则回退支持执行检索、查询事件。请尝试：搜索当前项目里的 SAG 多路检索。",
+      "Hiện chưa có LLM key nên chế độ fallback chỉ hỗ trợ truy hồi tài liệu và tra cứu event. Bạn có thể thử hỏi: tìm trong project hiện tại về SAG multi-search."
+    )
+    .replace(
+      "已通过 MCP 调用 sag_search，并返回检索结果和检索链路。",
+      "Đã gọi sag_search qua MCP và trả về kết quả truy hồi cùng search trace."
+    )
+    .replace(
+      "已通过 MCP 调用 sag_get_event 查询事件详情。",
+      "Đã gọi sag_get_event qua MCP để lấy chi tiết event."
+    )
     .replaceAll("sources", t("项目", "projects"))
     .replaceAll("source", t("项目", "project"))
     .replaceAll("Sources", t("项目", "Projects"))

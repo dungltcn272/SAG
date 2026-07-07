@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { pool, closePool } from "./pool.js";
 import { logger } from "../observability/logger.js";
 
@@ -51,7 +51,7 @@ export async function migrate(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   migrate()
     .then(async () => closePool())
     .catch(async (error: unknown) => {

@@ -120,7 +120,7 @@ export class AiSettingsService {
     try {
       const settings = await getAiProviderSettings();
       if (settings) {
-        return settings;
+        return withEnvSecretFallback(settings);
       }
     } catch {
       // Tests and fresh installs can run before migrations. Runtime callers still
@@ -128,6 +128,14 @@ export class AiSettingsService {
     }
     return envSettings();
   }
+}
+
+function withEnvSecretFallback(settings: AiProviderSettingsRecord): AiProviderSettingsRecord {
+  return {
+    ...settings,
+    embeddingApiKey: normalizeOptionalSecret(settings.embeddingApiKey ?? undefined) ?? normalizeOptionalSecret(config.EMBEDDING_API_KEY),
+    llmApiKey: normalizeOptionalSecret(settings.llmApiKey ?? undefined) ?? normalizeOptionalSecret(config.LLM_API_KEY)
+  };
 }
 
 function envSettings(): AiProviderSettingsRecord {

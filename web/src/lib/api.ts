@@ -42,7 +42,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const text = await response.text();
   const data = safeParseJson(text);
   if (!response.ok) {
-    const message = data?.error?.message ?? `请求失败：${response.status}`;
+    const message = data?.error?.message ?? `Yêu cầu thất bại: ${response.status}`;
     throw new Error(message);
   }
   return data as T;
@@ -241,7 +241,7 @@ export const api = {
     if (!response.ok || !response.body) {
       const text = await response.text();
       const data = safeParseJson(text);
-      throw new Error(data?.error?.message ?? `请求失败：${response.status}`);
+      throw new Error(data?.error?.message ?? `Yêu cầu thất bại: ${response.status}`);
     }
     await readSseStream(response, onEvent);
   },
@@ -302,7 +302,7 @@ export const api = {
     if (!response.ok || !response.body) {
       const text = await response.text();
       const data = safeParseJson(text);
-      throw new Error(data?.error?.message ?? `请求失败：${response.status}`);
+      throw new Error(data?.error?.message ?? `Yêu cầu thất bại: ${response.status}`);
     }
 
     await readSseStream(response, onEvent);

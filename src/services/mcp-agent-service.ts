@@ -110,14 +110,14 @@ export class McpAgentService {
     signal?: AbortSignal;
   }, tenantId = config.DEFAULT_TENANT_ID, emit?: StreamEmitter) {
     assertNotAborted(input.signal);
-    emit?.({ type: "stage", label: "加载会话", detail: "正在读取当前 MCP 会话上下文" });
+    emit?.({ type: "stage", label: "Tải phiên", detail: "Đang đọc ngữ cảnh MCP của phiên hiện tại" });
     const detail = await getMcpSessionDetail({
       sessionId: input.sessionId,
       tenantId
     });
     assertNotAborted(input.signal);
     if (!detail) {
-      throw new Error("MCP 会话不存在");
+      throw new Error("Không tìm thấy phiên MCP");
     }
 
     const userMessage = await addMcpMessage({
@@ -142,11 +142,11 @@ export class McpAgentService {
     }
     assertNotAborted(input.signal);
     emit?.({ type: "message", message: userMessage });
-    emit?.({ type: "stage", label: "连接 MCP", detail: "正在启动 MCP 客户端并发现可用工具" });
+    emit?.({ type: "stage", label: "Kết nối MCP", detail: "Đang khởi động MCP client và dò các tool khả dụng" });
 
     const projectId = activeSession.sourceIds[0];
     if (!projectId) {
-      throw new Error("MCP 会话缺少项目 ID，请先在项目下新建会话。");
+      throw new Error("Phiên MCP thiếu project ID. Hãy tạo hội thoại trong một project trước.");
     }
     const runner = await this.createRunner(projectId, input.signal);
     const toolCalls: McpToolCallRecord[] = [];
@@ -160,7 +160,7 @@ export class McpAgentService {
         inputSchema: tool.inputSchema
       }));
       assertNotAborted(input.signal);
-      emit?.({ type: "stage", label: "工具发现", detail: `发现 ${tools.length} 个 MCP 工具` });
+      emit?.({ type: "stage", label: "Dò tool", detail: `Tìm thấy ${tools.length} MCP tool` });
       const settings = await aiSettingsService.getRuntimeSettings();
       assertNotAborted(input.signal);
 
@@ -194,7 +194,7 @@ export class McpAgentService {
 
     assertNotAborted(input.signal);
     const answerCitations = collectAnswerCitations(toolCalls);
-    const assistantContent = assistantText || "已完成工具调用。";
+    const assistantContent = assistantText || "Tool call đã hoàn tất.";
     for (const delta of chunkText(assistantContent, 24)) {
       assertNotAborted(input.signal);
       emit?.({ type: "assistant_delta", delta });
@@ -258,9 +258,9 @@ export class McpAgentService {
     emit?: StreamEmitter;
   }): Promise<string> {
     const lower = input.userContent.toLowerCase();
-    let finalText = "当前未配置 LLM_API_KEY，已使用有限本地规则回退，并通过真实 MCP 客户端测试工具。";
+    let finalText = "Chưa cấu hình LLM_API_KEY, nên hệ thống đang dùng luật nội bộ đơn giản để gọi thử MCP tool.";
 
-    if (/search|检索|搜索|查找|sag|multi/.test(lower)) {
+    if (/search|检索|搜索|查找|tìm|tim|kiếm|kiem|sag|multi/.test(lower)) {
       assertNotAborted(input.signal);
       const args = {
         query: input.userContent,
@@ -271,22 +271,22 @@ export class McpAgentService {
       const call = await this.callToolAndPersist(input.runner, input.session.id, "sag_search", args, input.messageId, input.signal, input.emit);
       input.toolCalls.push(call);
       input.emit?.({ type: "tool_end", toolCall: call });
-      finalText = "已通过 MCP 调用 sag_search，并返回检索结果和检索链路。";
+      finalText = "Đã gọi sag_search qua MCP và trả về kết quả truy hồi cùng search trace.";
     }
 
     const eventId = input.userContent.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
-    if (/event|事件/.test(lower) && eventId) {
+    if (/event|事件|sự kiện|su kien/.test(lower) && eventId) {
       assertNotAborted(input.signal);
       const args = { eventId };
       input.emit?.({ type: "tool_start", toolName: "sag_get_event", arguments: args });
       const call = await this.callToolAndPersist(input.runner, input.session.id, "sag_get_event", args, input.messageId, input.signal, input.emit);
       input.toolCalls.push(call);
       input.emit?.({ type: "tool_end", toolCall: call });
-      finalText = "已通过 MCP 调用 sag_get_event 查询事件详情。";
+      finalText = "Đã gọi sag_get_event qua MCP để lấy chi tiết event.";
     }
 
     if (input.toolCalls.length === 0) {
-      finalText = "当前本地规则回退支持执行检索、查询事件。请尝试：搜索当前项目里的 SAG 多路检索。";
+      finalText = "Hiện chưa có LLM key nên chế độ fallback chỉ hỗ trợ truy hồi tài liệu và tra cứu event. Bạn có thể thử hỏi: tìm trong project hiện tại về SAG multi-search.";
     }
     return finalText;
   }
@@ -307,7 +307,7 @@ export class McpAgentService {
     const observations: Array<{ toolName: string; result: unknown; error?: string | null }> = [];
     for (let step = 0; step < 6; step += 1) {
       assertNotAborted(input.signal);
-      input.emit?.({ type: "stage", label: `LLM 规划 ${step + 1}`, detail: "正在决定下一步 MCP 工具调用" });
+      input.emit?.({ type: "stage", label: `LLM planning ${step + 1}`, detail: "Đang quyết định MCP tool call tiếp theo" });
       const action = await planToolAction({
         userContent: input.userContent,
         session: input.session,
@@ -319,11 +319,11 @@ export class McpAgentService {
       });
       assertNotAborted(input.signal);
       if (action.action === "final") {
-        finalText = action.final ?? "工具调用完成。";
+        finalText = action.final ?? "Tool call đã hoàn tất.";
         break;
       }
       if (!action.toolName || !input.tools.some((tool) => tool.name === action.toolName)) {
-        finalText = "LLM 选择了不存在的工具，已停止本轮调用。";
+        finalText = "LLM đã chọn một tool không tồn tại, nên lượt gọi này đã dừng.";
         break;
       }
       const toolArguments = normalizeToolArguments(action.toolName, action.arguments ?? {});
@@ -346,11 +346,11 @@ export class McpAgentService {
         error: call.error
       });
       if (call.status === "FAILED") {
-        finalText = `工具 ${action.toolName} 调用失败：${call.error ?? "未知错误"}`;
+        finalText = `Gọi tool ${action.toolName} thất bại: ${call.error ?? "Lỗi không rõ"}`;
         break;
       }
     }
-    return finalText || "已完成本轮 MCP 工具调用。";
+    return finalText || "Đã hoàn tất lượt gọi MCP tool này.";
   }
 
   private async callToolAndPersist(
@@ -420,7 +420,7 @@ export class McpAgentService {
 
 class McpRunAbortedError extends Error {
   constructor() {
-    super("MCP 对话已停止");
+    super("Hội thoại MCP đã dừng");
     this.name = "AbortError";
   }
 }
@@ -463,7 +463,9 @@ function shouldAutoTitleSession(session: McpSessionRecord, messages: Array<{ rol
   }
   return session.metadata.autoTitle === true ||
     session.title === defaultMcpSessionTitle() ||
-    session.title === "新 MCP 测试会话";
+    session.title === "新对话" ||
+    session.title === "新 MCP 测试会话" ||
+    session.title === "Phiên test MCP mới";
 }
 
 async function planToolAction(input: {
@@ -556,7 +558,7 @@ async function planToolAction(input: {
     });
     const { responseText, responseBody } = await readResponseBody(response);
     if (!response.ok) {
-      const error = new Error(`LLM 规划请求失败：${response.status} ${responseText.slice(0, 500)}`);
+      const error = new Error(`Yêu cầu LLM planning thất bại: ${response.status} ${responseText.slice(0, 500)}`);
       log.fail(error, {
         status: response.status,
         body: responseBody
@@ -627,7 +629,7 @@ function normalizeToolAction(raw: unknown): ToolAction {
   }
   return {
     action: "final",
-    final: record.final == null ? "工具调用完成。" : String(record.final)
+    final: record.final == null ? "Tool call đã hoàn tất." : String(record.final)
   };
 }
 
