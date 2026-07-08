@@ -3,6 +3,8 @@ import { normalizeVector } from "../db/vector.js";
 import { aiSettingsService } from "../services/ai-settings-service.js";
 import { createModelCallLogger } from "../observability/model-call-log.js";
 
+const REMOTE_EMBEDDING_BATCH_SIZE = 10;
+
 export interface EmbeddingClient {
   generate(text: string): Promise<number[]>;
   batchGenerate(texts: string[]): Promise<number[][]>;
@@ -41,6 +43,17 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
       return embeddings;
     }
 
+    const embeddings: number[][] = [];
+    for (let offset = 0; offset < texts.length; offset += REMOTE_EMBEDDING_BATCH_SIZE) {
+      const batch = texts.slice(offset, offset + REMOTE_EMBEDDING_BATCH_SIZE);
+      const batchEmbeddings = await this.generateRemoteBatch(batch, offset);
+      embeddings.push(...batchEmbeddings);
+    }
+    return embeddings;
+  }
+
+  private async generateRemoteBatch(texts: string[], offset: number): Promise<number[][]> {
+    const settings = await aiSettingsService.getRuntimeSettings();
     const url = `${settings.embeddingBaseUrl.replace(/\/$/, "")}/embeddings`;
     const body = {
       model: settings.embeddingModel,
@@ -53,6 +66,8 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
       request: {
         url,
         method: "POST",
+        batchOffset: offset,
+        batchSize: texts.length,
         headers: {
           "Content-Type": "application/json"
         },
@@ -71,8 +86,8 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
         body: JSON.stringify(body)
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const wrapped = new Error(`Không kết nối được Embedding API (${settings.embeddingBaseUrl}): ${message}`);
+      const message = describeFetchError(error);
+      const wrapped = new Error(`Unable to connect to Embedding API (${settings.embeddingBaseUrl}): ${message}`);
       log.fail(wrapped);
       throw wrapped;
     }
@@ -142,6 +157,32 @@ async function readResponseBody(response: Response): Promise<{ responseText: str
     responseText: typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody),
     responseBody
   };
+}
+
+function describeFetchError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const details = collectErrorMessages((error as Error & { cause?: unknown }).cause);
+  return uniqueStrings([error.message, ...details]).join(": ");
+}
+
+function collectErrorMessages(error: unknown): string[] {
+  if (!error) {
+    return [];
+  }
+  if (error instanceof AggregateError) {
+    return error.errors.flatMap(collectErrorMessages);
+  }
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    return [error.message, ...collectErrorMessages(cause)];
+  }
+  return [String(error)];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 export function deterministicEmbedding(text: string, dimensions: number): number[] {

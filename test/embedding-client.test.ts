@@ -79,4 +79,40 @@ describe("OpenAICompatibleEmbeddingClient", () => {
     const client = new OpenAICompatibleEmbeddingClient();
     await expect(client.generate("SAG")).rejects.toThrow("embedding dimension mismatch");
   });
+
+  it("splits remote embedding requests into provider-sized batches", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { input: string[] };
+      expect(body.input.length).toBeLessThanOrEqual(10);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          data: body.input.map((text) => {
+            const embedding = new Array(1024).fill(0);
+            embedding[0] = Number(text.replace("item-", ""));
+            return { embedding };
+          })
+        })
+      } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenAICompatibleEmbeddingClient();
+    const embeddings = await client.batchGenerate(Array.from({ length: 25 }, (_, index) => `item-${index}`));
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(embeddings.map((embedding) => embedding[0])).toEqual(Array.from({ length: 25 }, (_, index) => index));
+  });
+
+  it("preserves fetch error causes for TLS and network diagnostics", async () => {
+    const certificateError = new Error("unable to get local issuer certificate");
+    const fetchError = new TypeError("fetch failed", { cause: certificateError });
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw fetchError;
+    }));
+
+    const client = new OpenAICompatibleEmbeddingClient();
+    await expect(client.generate("SAG")).rejects.toThrow("unable to get local issuer certificate");
+  });
 });
