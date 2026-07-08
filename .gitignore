@@ -2,6 +2,7 @@ node_modules/
 dist/
 web/dist/
 coverage/
+out/
 
 .env
 .env.*
@@ -9,3 +10,7 @@ coverage/
 
 .DS_Store
 *.log
+
+.codex
+
+public/
