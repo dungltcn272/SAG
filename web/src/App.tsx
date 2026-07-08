@@ -2325,7 +2325,7 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
                   />
                 </div>
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                  <span className="min-w-0 truncate">{uploadStageLabel(job.stage, t)} · {job.message}</span>
+                  <span className="min-w-0 truncate">{uploadStageLabel(job.stage, t)} · {formatUploadMessage(job.message)}</span>
                   <span className="shrink-0">{Math.round(job.progress)}%</span>
                 </div>
                 {job.totalChunks ? (
@@ -2339,7 +2339,7 @@ function UploadJobsPanel({ jobs, expanded, onToggle }: {
                   </div>
                 ) : null}
                 {job.error ? (
-                  <div className="text-xs text-red-700">{job.error}</div>
+                  <div className="text-xs text-red-700">{formatUploadMessage(job.error)}</div>
                 ) : null}
               </CardContent>
             </Card>
@@ -3706,6 +3706,15 @@ function uploadStageLabel(stage: UploadJobRecord["stage"], t: (zh: string, en: s
   if (stage === "WRITING_GRAPH") return t("写入图谱", "Writing graph");
   if (stage === "COMPLETED") return t("处理完成", "Completed");
   return t("处理失败", "Failed");
+}
+
+function formatUploadMessage(message: string) {
+  return message
+    .replace("处理失败", "Xử lý thất bại")
+    .replace("等待处理", "Đang chờ xử lý")
+    .replace("已读取文件，准备提交处理", "Đã đọc file, chuẩn bị xử lý")
+    .replace("fetch failed", "Không kết nối được API model")
+    .replace("Failed to fetch", "Không kết nối được API model");
 }
 
 function processStatusLabel(status: ProcessStepStatus, t: (zh: string, en: string) => string) {

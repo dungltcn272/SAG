@@ -199,7 +199,7 @@ export class WebuiService {
       title: upload.title,
       status: "QUEUED",
       stage: "QUEUED",
-      message: "等待处理",
+      message: "Đang chờ xử lý",
       progress: 0,
       createdAt: now,
       updatedAt: now
@@ -235,7 +235,7 @@ export class WebuiService {
     this.updateUploadJob(jobId, {
       status: "RUNNING",
       stage: "READING",
-      message: "已读取文件，准备提交处理",
+      message: "Đã đọc file, chuẩn bị xử lý",
       progress: 5
     });
     try {
@@ -257,7 +257,7 @@ export class WebuiService {
       this.updateUploadJob(jobId, {
         status: "COMPLETED",
         stage: "COMPLETED",
-        message: `处理完成：${result.chunkCount} 个切片，${result.eventCount} 个事件`,
+        message: `Xử lý hoàn tất: ${result.chunkCount} chunk, ${result.eventCount} event`,
         progress: 100,
         documentId: result.documentId,
         traceId: result.traceId,
@@ -268,7 +268,7 @@ export class WebuiService {
       this.updateUploadJob(jobId, {
         status: "FAILED",
         stage: "FAILED",
-        message: "处理失败",
+        message: "Xử lý thất bại",
         progress: 100,
         error: error instanceof Error ? error.message : String(error)
       });

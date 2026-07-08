@@ -60,14 +60,22 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
       }
     });
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${settings.embeddingApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${settings.embeddingApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const wrapped = new Error(`Không kết nối được Embedding API (${settings.embeddingBaseUrl}): ${message}`);
+      log.fail(wrapped);
+      throw wrapped;
+    }
     const { responseText, responseBody } = await readResponseBody(response);
 
     if (!response.ok) {

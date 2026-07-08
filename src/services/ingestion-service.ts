@@ -71,7 +71,7 @@ export class IngestionService {
 
     onProgress?.({
       stage: "PARSING",
-      message: "正在解析文档内容",
+      message: "Đang phân tích nội dung tài liệu",
       progress: 8
     });
     const source = await createSource({
@@ -85,7 +85,7 @@ export class IngestionService {
     const chunking = chunkMarkdown(input.content, chunkingOptions);
     onProgress?.({
       stage: "CHUNKING",
-      message: `已生成 ${chunking.chunks.length} 个切片`,
+      message: `Đã tạo ${chunking.chunks.length} chunk`,
       progress: 18,
       chunkCount: chunking.chunks.length,
       totalChunks: chunking.chunks.length
@@ -93,7 +93,7 @@ export class IngestionService {
 
     onProgress?.({
       stage: "EMBEDDING_CHUNKS",
-      message: "正在生成切片向量",
+      message: "Đang tạo vector cho chunks",
       progress: 35,
       chunkCount: chunking.chunks.length,
       totalChunks: chunking.chunks.length
@@ -121,7 +121,7 @@ export class IngestionService {
       );
       onProgress?.({
         stage: "WRITING_GRAPH",
-        message: "正在写入文档记录",
+        message: "Đang ghi bản ghi tài liệu",
         progress: 24,
         chunkCount: chunking.chunks.length,
         eventCount: preparedEvents.length,
@@ -235,7 +235,7 @@ export class IngestionService {
 
       onProgress?.({
         stage: "WRITING_GRAPH",
-        message: "正在完成图谱关系写入",
+        message: "Đang hoàn tất ghi quan hệ graph",
         progress: 95,
         chunkCount: chunking.chunks.length,
         eventCount: preparedEvents.length,
@@ -250,7 +250,7 @@ export class IngestionService {
       logger.info({ traceId, documentId, chunkCount: chunking.chunks.length, eventCount: preparedEvents.length }, "document ingested");
       onProgress?.({
         stage: "COMPLETED",
-        message: `处理完成：${chunking.chunks.length} 个切片，${preparedEvents.length} 个事件`,
+        message: `Xử lý hoàn tất: ${chunking.chunks.length} chunk, ${preparedEvents.length} event`,
         progress: 100,
         chunkCount: chunking.chunks.length,
         eventCount: preparedEvents.length,
@@ -284,7 +284,7 @@ export class IngestionService {
     const extracted = await mapWithConcurrency(input.chunks, input.concurrency, async (chunk) => {
       input.onProgress?.({
         stage: "EXTRACTING_EVENTS",
-        message: `正在并行抽取事件（并发 ${input.concurrency}），已完成 ${extractedChunks}/${input.chunks.length} 个切片`,
+        message: `Đang trích xuất event song song (concurrency ${input.concurrency}), đã xong ${extractedChunks}/${input.chunks.length} chunk`,
         progress: progressForCompleted(extractedChunks, input.chunks.length, 48, 74),
         chunkCount: input.chunks.length,
         eventCount: extractedEventCount,
@@ -302,7 +302,7 @@ export class IngestionService {
       extractedEventCount += events.length;
       input.onProgress?.({
         stage: "EXTRACTING_EVENTS",
-        message: `已完成 ${extractedChunks}/${input.chunks.length} 个切片事件抽取`,
+        message: `Đã trích xuất event cho ${extractedChunks}/${input.chunks.length} chunk`,
         progress: progressForCompleted(extractedChunks, input.chunks.length, 48, 74),
         chunkCount: input.chunks.length,
         eventCount: extractedEventCount,
@@ -329,7 +329,7 @@ export class IngestionService {
       embeddedEvents += 1;
       input.onProgress?.({
         stage: "EMBEDDING_EVENTS",
-        message: `正在并行生成事件向量（并发 ${input.concurrency}），已完成 ${embeddedEvents}/${eventInputs.length} 个事件`,
+        message: `Đang tạo vector event song song (concurrency ${input.concurrency}), đã xong ${embeddedEvents}/${eventInputs.length} event`,
         progress: progressForCompleted(embeddedEvents, Math.max(eventInputs.length, 1), 74, 82),
         chunkCount: input.chunks.length,
         eventCount: eventInputs.length,
@@ -349,7 +349,7 @@ export class IngestionService {
       embeddedEntities += 1;
       input.onProgress?.({
         stage: "EMBEDDING_EVENTS",
-        message: `正在并行生成实体向量（并发 ${input.concurrency}），已完成 ${embeddedEntities}/${entityInputs.length} 个实体`,
+        message: `Đang tạo vector entity song song (concurrency ${input.concurrency}), đã xong ${embeddedEntities}/${entityInputs.length} entity`,
         progress: progressForCompleted(embeddedEntities, Math.max(entityInputs.length, 1), 82, 88),
         chunkCount: input.chunks.length,
         eventCount: eventInputs.length,
@@ -372,7 +372,7 @@ export class IngestionService {
       embeddedRelations += 1;
       input.onProgress?.({
         stage: "EMBEDDING_EVENTS",
-        message: `正在并行生成关系向量（并发 ${input.concurrency}），已完成 ${embeddedRelations}/${relationInputs.length} 条关系`,
+        message: `Đang tạo vector quan hệ song song (concurrency ${input.concurrency}), đã xong ${embeddedRelations}/${relationInputs.length} quan hệ`,
         progress: progressForCompleted(embeddedRelations, Math.max(relationInputs.length, 1), 88, 92),
         chunkCount: input.chunks.length,
         eventCount: eventInputs.length,
@@ -388,7 +388,7 @@ export class IngestionService {
         const entityEmbedding = entityEmbeddings.get(entityEmbeddingKey(entity));
         const relationEmbedding = relationEmbeddings.get(relationEmbeddingKey(eventInput.eventId, entity));
         if (!entityEmbedding || !relationEmbedding) {
-          throw new Error("实体或关系向量生成不完整");
+          throw new Error("Vector entity hoặc quan hệ sinh chưa đầy đủ");
         }
         return {
           ...entity,
